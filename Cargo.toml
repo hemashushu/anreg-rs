@@ -1,0 +1,21 @@
+[package]
+name = "anreg"
+version = "1.1.0"
+edition = "2021"
+
+license = "MPL-2.0"
+description = "Anregex is a readable and writable variant of regular expressions that offers all the capabilities of ordinary regular expressions and allows for mutual conversion."
+homepage = "https://hemashushu.github.io/works/anreg"
+documentation = "https://hemashushu.github.io/works/anreg"
+repository = "https://github.com/hemashushu/anreg-rs"
+readme = "README.md"
+keywords = ["regex", "xiaoxuan", "anreg"]
+categories = []
+
+[dependencies]
+# argh = "0.1.12"
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
+
+[features]
