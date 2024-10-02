@@ -1,5 +1,5 @@
 # ANREG
 
-_XiaoXuan Regular Expression_ is a readable and writable variant of regular expressions that offers all the capabilities of ordinary regular expressions and allows for mutual conversion.
+_XiaoXuan Regular Expression_ is a user-friendly regular expression that doesn't require prior learning. It offers the full functionality of standard regular expressions and can be converted to and from them on a one-to-one basis.
 
-_Anreg_ is a lightweight regular expression engine (interpreter) for _XiaoXuan Regular Expression_.
+_anreg_ is a lightweight regular expression engine (interpreter) for _XiaoXuan Regular Expression_.

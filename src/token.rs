@@ -1,0 +1,134 @@
+// Copyright (c) 2024 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+use crate::location::Location;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Token {
+    // includes `\n` and `\r\n`
+    NewLine,
+
+    // `,`
+    Comma,
+
+    // `!`
+    Exclamation,
+
+    // ..
+    Interval,
+
+    // .
+    Dot,
+
+    // `||`
+    LogicOr,
+
+    // [
+    LeftBracket,
+    // ]
+    RightBracket,
+
+    // (
+    LeftParen,
+    // )
+    RightParen,
+
+    // [a-zA-Z0-9_] and '\u{a0}' - '\u{d7ff}' and '\u{e000}' - '\u{10ffff}'
+    // (builtin) functions name
+    // user defined groups name
+    Identifier(String),
+
+    Number(u32),
+
+    Char(char),
+    String_(String),
+
+    Comment(Comment),
+
+    /*
+     * Notations/Symbols
+     */
+
+    // ?
+    Question,
+
+    // +
+    Plus,
+
+    // *
+    Asterisk,
+
+    // {
+    LeftBrace,
+
+    // }
+    RightBrace,
+
+    /*
+     * Keywords
+     */
+
+    KeywordDefine,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Comment {
+    // `//...`
+    // note that the trailing '\n' or '\r\n' does not belong to line comment
+    Line(String),
+
+    // `/*...*/`
+    Block(String),
+}
+
+impl Token {
+    // for printing
+    pub fn get_description(&self) -> String {
+        match self {
+            Token::NewLine => "new line".to_owned(),
+            Token::Comma => "comma \",\"".to_owned(),
+            Token::LeftBracket => "left bracket \"[\"".to_owned(),
+            Token::RightBracket => "right bracket \"]\"".to_owned(),
+            Token::LeftParen => "left parenthese \"(\"".to_owned(),
+            Token::RightParen => "right parenthese \")\"".to_owned(),
+            Token::Exclamation => "exclamation point \"!\"".to_owned(),
+            Token::Interval => "interval \"..\"".to_owned(),
+            Token::Dot => "dot \".\"".to_owned(),
+            Token::LogicOr => "logic or \"||\"".to_owned(),
+            Token::Identifier(id) => format!("identifier \"{}\"", id),
+            Token::Number(n) => format!("number \"{}\"", n),
+            Token::Char(c) => format!("char \"{}\"", c),
+            Token::String_(_) => "string".to_owned(),
+            Token::Comment(_) => "comment".to_owned(),
+            Token::Question => "question mark \"?\"".to_owned(),
+            Token::Plus => "plus sign \"+\"".to_owned(),
+            Token::Asterisk => "asterisk \"*\"".to_owned(),
+            Token::LeftBrace => "left brace \"{\"".to_owned(),
+            Token::RightBrace => "right brace \"}\"".to_owned(),
+            Token::KeywordDefine => "keyword \"define\"".to_owned(),
+
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TokenWithRange {
+    pub token: Token,
+    pub range: Location,
+}
+
+impl TokenWithRange {
+    pub fn new(token: Token, range: Location) -> Self {
+        Self { token, range }
+    }
+
+    pub fn from_position_and_length(token: Token, position: &Location, length: usize) -> Self {
+        Self {
+            token,
+            range: Location::from_position_and_length(position, length),
+        }
+    }
+}

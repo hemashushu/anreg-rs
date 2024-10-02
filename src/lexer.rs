@@ -4,106 +4,13 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::fmt::Display;
-
-use crate::{charposition::CharWithPosition, error::Error, location::Location};
-
-use super::peekableiter::PeekableIter;
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token {
-    // includes `\n` and `\r\n`
-    NewLine,
-
-    // `,`
-    Comma,
-
-    // `!`
-    Exclam,
-
-    // ..
-    Ellipsis,
-
-    // .
-    Dot,
-
-    // `||`
-    LogicOr,
-
-    // [
-    LeftBracket,
-    // ]
-    RightBracket,
-
-    // (
-    LeftParen,
-    // )
-    RightParen,
-
-    // [a-zA-Z0-9_] and '\u{a0}' - '\u{d7ff}' and '\u{e000}' - '\u{10ffff}'
-    // (builtin) functions name
-    // user defined groups name
-    Identifier(String),
-
-    Number(u32),
-
-    Char(char),
-    String_(String),
-
-    Comment(Comment),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Comment {
-    // `//...`
-    // note that the trailing '\n' or '\r\n' does not belong to line comment
-    Line(String),
-
-    // `/*...*/`
-    Block(String),
-}
-
-impl Token {
-    // for printing
-    pub fn get_description(&self) -> String {
-        match self {
-            Token::NewLine => "new line".to_owned(),
-            Token::Comma => "comma \",\"".to_owned(),
-            Token::LeftBracket => "left bracket \"[\"".to_owned(),
-            Token::RightBracket => "right bracket \"]\"".to_owned(),
-            Token::LeftParen => "left parenthese \"(\"".to_owned(),
-            Token::RightParen => "right parenthese \")\"".to_owned(),
-            Token::Exclam => "exclam \"!\"".to_owned(),
-            Token::Ellipsis => "ellipsis \"..\"".to_owned(),
-            Token::Dot => "dot \".\"".to_owned(),
-            Token::LogicOr => "logic or \"||\"".to_owned(),
-            Token::Identifier(id) => format!("identifier \"{}\"", id),
-            Token::Number(n) => format!("number \"{}\"", n),
-            Token::Char(c) => format!("char \"{}\"", c),
-            Token::String_(_) => "string".to_owned(),
-            Token::Comment(_) => "comment".to_owned(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct TokenWithRange {
-    pub token: Token,
-    pub range: Location,
-}
-
-impl TokenWithRange {
-    pub fn new(token: Token, range: Location) -> Self {
-        Self { token, range }
-    }
-
-    pub fn from_position_and_length(token: Token, position: &Location, length: usize) -> Self {
-        Self {
-            token,
-            range: Location::from_position_and_length(position, length),
-        }
-    }
-}
+use crate::{
+    charposition::CharWithPosition,
+    error::Error,
+    location::Location,
+    peekableiter::PeekableIter,
+    token::{Comment, Token, TokenWithRange},
+};
 
 pub struct Lexer<'a> {
     upstream: &'a mut PeekableIter<'a, CharWithPosition>,
@@ -217,7 +124,7 @@ impl<'a> Lexer<'a> {
                     self.next_char(); // consule '!'
 
                     token_ranges.push(TokenWithRange::from_position_and_length(
-                        Token::Exclam,
+                        Token::Exclamation,
                         &self.last_position,
                         1,
                     ));
@@ -230,7 +137,7 @@ impl<'a> Lexer<'a> {
                         self.next_char(); // consume '.'
 
                         token_ranges.push(TokenWithRange::from_position_and_length(
-                            Token::Ellipsis,
+                            Token::Interval,
                             &self.pop_saved_position(),
                             2,
                         ));
@@ -280,6 +187,51 @@ impl<'a> Lexer<'a> {
                         1,
                     ))
                 }
+                '?' => {
+                    self.next_char(); // consule '?'
+
+                    token_ranges.push(TokenWithRange::from_position_and_length(
+                        Token::Question,
+                        &self.last_position,
+                        1,
+                    ))
+                }
+                '+' => {
+                    self.next_char(); // consule '+'
+
+                    token_ranges.push(TokenWithRange::from_position_and_length(
+                        Token::Plus,
+                        &self.last_position,
+                        1,
+                    ))
+                }
+                '*' => {
+                    self.next_char(); // consule '*'
+
+                    token_ranges.push(TokenWithRange::from_position_and_length(
+                        Token::Asterisk,
+                        &self.last_position,
+                        1,
+                    ))
+                }
+                '{' => {
+                    self.next_char(); // consule '{'
+
+                    token_ranges.push(TokenWithRange::from_position_and_length(
+                        Token::LeftBrace,
+                        &self.last_position,
+                        1,
+                    ));
+                }
+                '}' => {
+                    self.next_char(); // consule '}'
+
+                    token_ranges.push(TokenWithRange::from_position_and_length(
+                        Token::RightBrace,
+                        &self.last_position,
+                        1,
+                    ))
+                }
                 '0'..='9' => {
                     // number
                     token_ranges.push(self.lex_number()?);
@@ -302,7 +254,7 @@ impl<'a> Lexer<'a> {
                 }
                 'a'..='z' | 'A'..='Z' | '_' | '\u{a0}'..='\u{d7ff}' | '\u{e000}'..='\u{10ffff}' => {
                     // identifier (the key name of struct/object) or keyword
-                    token_ranges.push(self.lex_identifier()?);
+                    token_ranges.push(self.lex_identifier_or_keyword()?);
                 }
                 current_char => {
                     return Err(Error::MessageWithLocation(
@@ -316,7 +268,7 @@ impl<'a> Lexer<'a> {
         Ok(token_ranges)
     }
 
-    fn lex_identifier(&mut self) -> Result<TokenWithRange, Error> {
+    fn lex_identifier_or_keyword(&mut self) -> Result<TokenWithRange, Error> {
         // key_nameT  //
         // ^       ^__// to here
         // |__________// current char, validated
@@ -371,7 +323,7 @@ impl<'a> Lexer<'a> {
                     self.next_char(); // consume char
                 }
                 ' ' | '\t' | '\r' | '\n' | ',' | '|' | '!' | '[' | ']' | '(' | ')' | '/' | '\''
-                | '"' => {
+                | '"' | '?' | '+' | '*' | '{' | '}' => {
                     // terminator chars
                     break;
                 }
@@ -384,12 +336,19 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let token = Token::Identifier(name_string);
-
         let name_range = Location::from_position_pair_with_end_included(
             &self.pop_saved_position(),
             &self.last_position,
         );
+
+        let token = match name_string.as_str() {
+            "define" => {
+                Token::KeywordDefine
+            },
+            _=> {
+                Token::Identifier(name_string)
+            }
+        };
 
         Ok(TokenWithRange::new(token, name_range))
     }
@@ -417,7 +376,7 @@ impl<'a> Lexer<'a> {
                     self.next_char(); // consume '_'
                 }
                 ' ' | '\t' | '\r' | '\n' | ',' | '|' | '!' | '[' | ']' | '(' | ')' | '/' | '\''
-                | '"' => {
+                | '"' | '?' | '+' | '*' | '{' | '}' => {
                     // terminator chars
                     break;
                 }
@@ -969,17 +928,22 @@ mod tests {
     #[test]
     fn test_lex_punctuations() {
         assert_eq!(
-            lex_str_to_vec(",!...||[]()").unwrap(),
+            lex_str_to_vec(",!...||[]()?+*{}").unwrap(),
             vec![
                 Token::Comma,
-                Token::Exclam,
-                Token::Ellipsis,
+                Token::Exclamation,
+                Token::Interval,
                 Token::Dot,
                 Token::LogicOr,
                 Token::LeftBracket,
                 Token::RightBracket,
                 Token::LeftParen,
                 Token::RightParen,
+                Token::Question,
+                Token::Plus,
+                Token::Asterisk,
+                Token::LeftBrace,
+                Token::RightBrace
             ]
         );
     }
@@ -1060,6 +1024,32 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[test]
+    fn test_lex_keyword() {
+        assert_eq!(
+            lex_str_to_vec("define").unwrap(),
+            vec![Token::KeywordDefine]
+        );
+
+        // location
+
+        assert_eq!(
+            lex_str_to_vec_with_range("char_any define").unwrap(),
+            vec![
+                TokenWithRange::from_position_and_length(
+                    Token::new_identifier("char_any"),
+                    &Location::new_position(0, 0, 0, 0),
+                    8
+                ),
+                TokenWithRange::from_position_and_length(
+                    Token::KeywordDefine,
+                    &Location::new_position(0, 9, 0, 9),
+                    6
+                )
+            ]
+        );
     }
 
     #[test]
@@ -1838,7 +1828,7 @@ mod tests {
         assert_eq!(
             lex_str_to_vec(
                 r#"
-                ('a', "def", "xyz".repeat(3)).once_or_more()
+                ('a', "def", "xyz".repeat(3)).one_or_more()
                 "#
             )
             .unwrap(),
@@ -1857,7 +1847,7 @@ mod tests {
                 Token::RightParen,
                 Token::RightParen,
                 Token::Dot,
-                Token::new_identifier("once_or_more"),
+                Token::new_identifier("one_or_more"),
                 Token::LeftParen,
                 Token::RightParen,
                 Token::NewLine
@@ -1867,7 +1857,38 @@ mod tests {
         assert_eq!(
             lex_str_to_vec(
                 r#"
-                once_or_more([
+                'a'?
+                'b'+
+                'c'*
+                'd'{1,2}
+                "#
+            )
+            .unwrap(),
+            vec![
+                Token::NewLine,
+                Token::Char('a'),
+                Token::Question,
+                Token::NewLine,
+                Token::Char('b'),
+                Token::Plus,
+                Token::NewLine,
+                Token::Char('c'),
+                Token::Asterisk,
+                Token::NewLine,
+                Token::Char('d'),
+                Token::LeftBrace,
+                Token::Number(1),
+                Token::Comma,
+                Token::Number(2),
+                Token::RightBrace,
+                Token::NewLine
+            ]
+        );
+
+        assert_eq!(
+            lex_str_to_vec(
+                r#"
+                one_or_more([
                     'a'..'f'    // comment 1
                     '0'..'9'    // comment 2
                     '_'
@@ -1877,17 +1898,17 @@ mod tests {
             .unwrap(),
             vec![
                 Token::NewLine,
-                Token::new_identifier("once_or_more"),
+                Token::new_identifier("one_or_more"),
                 Token::LeftParen,
                 Token::LeftBracket,
                 Token::NewLine,
                 Token::Char('a'),
-                Token::Ellipsis,
+                Token::Interval,
                 Token::Char('f'),
                 Token::Comment(Comment::Line(" comment 1".to_owned())),
                 Token::NewLine,
                 Token::Char('0'),
-                Token::Ellipsis,
+                Token::Interval,
                 Token::Char('9'),
                 Token::Comment(Comment::Line(" comment 2".to_owned())),
                 Token::NewLine,

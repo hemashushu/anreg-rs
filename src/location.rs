@@ -82,15 +82,15 @@ impl Location {
     }
 
     /// Convert Range to Position
-    pub fn from_range_start(range: &Location) -> Self {
-        Self::new_position(range.unit, range.index, range.line, range.column)
+    pub fn get_position_by_range_start(&self) -> Self {
+        Self::new_position(self.unit, self.index, self.line, self.column)
     }
 
     /// Convert Range to Position
-    pub fn from_range_end(range: &Location) -> Self {
-        let index = range.index + range.length;
-        let column = range.column + range.length;
-        Self::new_position(range.unit, index, range.line, column)
+    pub fn get_position_by_range_end(&self) -> Self {
+        let index = self.index + self.length;
+        let column = self.column + self.length;
+        Self::new_position(self.unit, index, self.line, column)
     }
 
     pub fn move_position_forward(&self) -> Self {
@@ -100,13 +100,4 @@ impl Location {
             ..*self
         }
     }
-
-    //     pub fn move_position_forward_by_line(&self) -> Self {
-    //         Self {
-    //             index: self.index + 1,
-    //             line: self.line + 1,
-    //             column: 0,
-    //             ..*self
-    //         }
-    //     }
 }

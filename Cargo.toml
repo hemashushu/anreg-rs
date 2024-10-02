@@ -4,7 +4,7 @@ version = "1.1.0"
 edition = "2021"
 
 license = "MPL-2.0"
-description = "Anregex is a readable and writable variant of regular expressions that offers all the capabilities of ordinary regular expressions and allows for mutual conversion."
+description = "Anreg is a lightweight regular expression engine (interpreter) for XiaoXuan Regular Expression."
 homepage = "https://hemashushu.github.io/works/anreg"
 documentation = "https://hemashushu.github.io/works/anreg"
 repository = "https://github.com/hemashushu/anreg-rs"

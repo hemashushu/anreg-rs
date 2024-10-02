@@ -4,13 +4,8 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-mod ast;
-mod charposition;
-mod error;
-mod errorprinter;
-mod lexer;
-mod location;
-mod normalizer;
-mod parser;
-mod peekableiter;
-mod token;
+use crate::{peekableiter::PeekableIter, token::TokenWithRange};
+
+pub struct Parser<'a> {
+    upstream: &'a mut PeekableIter<'a, TokenWithRange>,
+}

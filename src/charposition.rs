@@ -72,10 +72,10 @@ mod tests {
     fn test_chars_with_position_iter() {
         {
             let mut chars = "a\nmn\nxyz".chars();
-            let mut char_positions = CharsWithPositionIter::new(0, &mut chars);
+            let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'a',
                     Location::new_position(0, 0, 0, 0)
@@ -83,7 +83,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\n',
                     Location::new_position(0, 1, 0, 1)
@@ -91,7 +91,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'm',
                     Location::new_position(0, 2, 1, 0)
@@ -99,7 +99,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'n',
                     Location::new_position(0, 3, 1, 1)
@@ -107,7 +107,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\n',
                     Location::new_position(0, 4, 1, 2)
@@ -115,7 +115,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'x',
                     Location::new_position(0, 5, 2, 0)
@@ -123,7 +123,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'y',
                     Location::new_position(0, 6, 2, 1)
@@ -131,22 +131,22 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     'z',
                     Location::new_position(0, 7, 2, 2)
                 ))
             );
 
-            assert!(char_positions.next().is_none());
+            assert!(char_position_iter.next().is_none());
         }
 
         {
             let mut chars = "\n\r\n\n".chars();
-            let mut char_positions = CharsWithPositionIter::new(1, &mut chars);
+            let mut char_position_iter = CharsWithPositionIter::new(1, &mut chars);
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\n',
                     Location::new_position(1, 0, 0, 0)
@@ -154,7 +154,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\r',
                     Location::new_position(1, 1, 1, 0)
@@ -162,7 +162,7 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\n',
                     Location::new_position(1, 2, 1, 1)
@@ -170,14 +170,14 @@ mod tests {
             );
 
             assert_eq!(
-                char_positions.next(),
+                char_position_iter.next(),
                 Some(CharWithPosition::new(
                     '\n',
                     Location::new_position(1, 3, 2, 0)
                 ))
             );
 
-            assert!(char_positions.next().is_none());
+            assert!(char_position_iter.next().is_none());
         }
     }
 }
