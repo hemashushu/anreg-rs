@@ -202,7 +202,7 @@ mod tests {
             // unchaged:
             // - comma => comma
             //
-            // normalization:
+            // normalized:
             // - comma + blank(s) => comma
             // - blank(s) + comma => comma
             // - blank(s) + comma + blank(s) => comma

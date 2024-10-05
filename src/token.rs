@@ -37,15 +37,12 @@ pub enum Token {
     RightParen,
 
     // [a-zA-Z0-9_] and '\u{a0}' - '\u{d7ff}' and '\u{e000}' - '\u{10ffff}'
-    // (builtin) functions name
-    // user defined groups name
     Identifier(String),
-
+    Symbol(String),
+    PresetCharSet(String),
     Number(u32),
-
     Char(char),
-    String_(String),
-
+    String(String),
     Comment(Comment),
 
     /*
@@ -55,23 +52,26 @@ pub enum Token {
     // ?
     Question,
 
+    // ??
+    QuestionLazy,
+
     // +
     Plus,
 
+    // +?
+    PlusLazy,
+
     // *
     Asterisk,
+
+    // *?
+    AsteriskLazy,
 
     // {
     LeftBrace,
 
     // }
     RightBrace,
-
-    /*
-     * Keywords
-     */
-
-    KeywordDefine,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -99,17 +99,20 @@ impl Token {
             Token::Dot => "dot \".\"".to_owned(),
             Token::LogicOr => "logic or \"||\"".to_owned(),
             Token::Identifier(id) => format!("identifier \"{}\"", id),
+            Token::Symbol(k) => format!("symbol \"{}\"", k),
+            Token::PresetCharSet(s) => format!("preset charset \"{}\"", s),
             Token::Number(n) => format!("number \"{}\"", n),
             Token::Char(c) => format!("char \"{}\"", c),
-            Token::String_(_) => "string".to_owned(),
+            Token::String(_) => "string".to_owned(),
             Token::Comment(_) => "comment".to_owned(),
             Token::Question => "question mark \"?\"".to_owned(),
+            Token::QuestionLazy => "question and question mark \"??\"".to_owned(),
             Token::Plus => "plus sign \"+\"".to_owned(),
+            Token::PlusLazy => "plus and question mark \"+?\"".to_owned(),
             Token::Asterisk => "asterisk \"*\"".to_owned(),
+            Token::AsteriskLazy => "asterisk and question \"*?\"".to_owned(),
             Token::LeftBrace => "left brace \"{\"".to_owned(),
             Token::RightBrace => "right brace \"}\"".to_owned(),
-            Token::KeywordDefine => "keyword \"define\"".to_owned(),
-
         }
     }
 }
