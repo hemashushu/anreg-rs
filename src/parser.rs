@@ -245,9 +245,9 @@ impl<'a> Parser<'a> {
         // ^
         // | current, not None
 
-        let left = self.parse_simple_expression()?;
+        let mut left = self.parse_simple_expression()?;
 
-        if self.peek_token_and_equals(0, &Token::LogicOr) {
+        while let Some(Token::LogicOr) = self.peek_token(0) {
             self.next_token(); // consume "||"
             self.consume_new_line_if_exist(); // consume trailing new-line
 
@@ -259,10 +259,10 @@ impl<'a> Parser<'a> {
 
             let right = self.parse_simple_expression()?;
             let expression = Expression::Alternation(Box::new(left), Box::new(right));
-            Ok(expression)
-        } else {
-            Ok(left)
+            left = expression;
         }
+
+        Ok(left)
     }
 
     // post unary expression
@@ -298,6 +298,8 @@ impl<'a> Parser<'a> {
                         args: vec![],
                     };
                     left = Expression::FunctionCall(Box::new(function_call));
+
+                    self.next_token(); // consume notation
                 }
                 Token::LeftBrace => {
                     let (notation_quantifier, lazy) = self.continue_parse_notation_quantifier()?;
@@ -391,7 +393,7 @@ impl<'a> Parser<'a> {
 
             let to_optional = if let Some(Token::Number(to)) = self.peek_token(0) {
                 let n = *to;
-                self.next_token(); // consume n
+                self.next_token(); // consume number
                 Some(n)
             } else {
                 None
@@ -482,10 +484,14 @@ impl<'a> Parser<'a> {
 
             match token {
                 Token::Number(n) => {
-                    args.push(FunctionCallArg::Number(*n));
+                    let num = *n;
+                    self.next_token(); // consume number
+                    args.push(FunctionCallArg::Number(num));
                 }
                 Token::Identifier(s) => {
-                    args.push(FunctionCallArg::Identifier(s.to_owned()));
+                    let id = s.to_owned();
+                    self.next_token(); // consume identifier
+                    args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
                     return Err(Error::MessageWithLocation(
@@ -608,10 +614,14 @@ impl<'a> Parser<'a> {
 
             match token {
                 Token::Number(n) => {
-                    args.push(FunctionCallArg::Number(*n));
+                    let num = *n;
+                    self.next_token(); // consume number
+                    args.push(FunctionCallArg::Number(num));
                 }
                 Token::Identifier(s) => {
-                    args.push(FunctionCallArg::Identifier(s.to_owned()));
+                    let id = s.to_owned();
+                    self.next_token(); // consume identifier
+                    args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
                     return Err(Error::MessageWithLocation(
@@ -723,7 +733,7 @@ impl<'a> Parser<'a> {
             }
 
             match token {
-                Token::Char(c)
+                Token::Char(_)
                     if self.peek_token_and_equals(1, &Token::Interval)
                         || (self.peek_token_and_equals(1, &Token::NewLine)
                             && self.peek_token_and_equals(2, &Token::Interval)) =>
@@ -776,7 +786,18 @@ impl<'a> Parser<'a> {
         // |    | vali..  | validated
         // | current, validated
 
-        todo!()
+        let start = self.expect_char()?; // consume start char
+        self.consume_new_line_if_exist();
+
+        self.next_token(); // consume '..'
+        self.consume_new_line_if_exist();
+
+        let end = self.expect_char()?; // consume end char
+
+        Ok(CharRange {
+            start,
+            end_included: end,
+        })
     }
 }
 
@@ -793,6 +814,7 @@ fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionNa
         "one_or_more" => FunctionName::OneOrMore,
         "zero_or_more" => FunctionName::ZeroOrMore,
         "repeat" => FunctionName::Repeat,
+        "repeat_range" => FunctionName::RepeatRange,
         "at_least" => FunctionName::AtLeast,
 
         // Lazy quantifier
@@ -800,6 +822,7 @@ fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionNa
         "one_or_more_lazy" => FunctionName::OneOrMoreLazy,
         "zero_or_more_lazy" => FunctionName::ZeroOrMoreLazy,
         "repeat_lazy" => FunctionName::RepeatLazy,
+        "repeat_range_lazy" => FunctionName::RepeatRangeLazy,
         "at_least_lazy" => FunctionName::AtLeastLazy,
 
         // Assertions
@@ -869,19 +892,21 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use crate::ast::{Expression, Literal, Program};
+    use crate::ast::{CharRange, CharSet, CharSetElement, Expression, Literal, Program};
 
     use super::parse_from_str;
 
     #[test]
-    fn test_parse_simple_literal() {
+    fn test_parse_literal_simple() {
+        let program = parse_from_str(
+            r#"
+start, 'a', "foo", char_word
+    "#,
+        )
+        .unwrap();
+
         assert_eq!(
-            parse_from_str(
-                r#"
-        start, 'a', "foo", char_word
-        "#,
-            )
-            .unwrap(),
+            program,
             Program {
                 definitions: vec![],
                 expressions: vec![
@@ -891,6 +916,290 @@ mod tests {
                     Expression::Literal(Literal::PresetCharSet("char_word".to_owned())),
                 ]
             }
+        );
+
+        assert_eq!(program.to_string(), r#"start, 'a', "foo", char_word"#);
+    }
+
+    #[test]
+    fn test_parse_literal_charset() {
+        let program = parse_from_str(
+            r#"
+['a', '0'..'9', char_word, end]
+    "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            program,
+            Program {
+                definitions: vec![],
+                expressions: vec![Expression::Literal(Literal::CharSet(CharSet {
+                    negative: false,
+                    elements: vec![
+                        CharSetElement::Char('a'),
+                        CharSetElement::CharRange(CharRange {
+                            start: '0',
+                            end_included: '9'
+                        }),
+                        CharSetElement::PresetCharSet("char_word".to_owned()),
+                        CharSetElement::Symbol("end".to_owned())
+                    ]
+                })),]
+            }
+        );
+
+        assert_eq!(program.to_string(), r#"['a', '0'..'9', char_word, end]"#);
+
+        // negative
+        assert_eq!(
+            parse_from_str(
+                r#"
+!['a'..'z', char_space]
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"!['a'..'z', char_space]"#
+        );
+
+        // multiline
+        assert_eq!(
+            parse_from_str(
+                r#"
+[
+    'a'
+    '0'
+    ..
+    '9'
+    char_word
+    end
+]"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"['a', '0'..'9', char_word, end]"#
+        );
+
+        // multiline with comma
+        assert_eq!(
+            parse_from_str(
+                r#"
+[
+    'a',
+    '0'
+    ..
+    '9',
+    char_word,
+    end,
+]"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"['a', '0'..'9', char_word, end]"#
+        );
+    }
+
+    #[test]
+    fn test_expression_function_call() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+optional('a')
+one_or_more('b')
+zero_or_more_lazy('c')
+name("xyz", prefix)
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"optional('a')
+one_or_more('b')
+zero_or_more_lazy('c')
+name("xyz", prefix)"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+repeat(
+    'a'
+    3
+)
+repeat_range(
+    'b'
+    5
+    7
+)
+at_least('c'
+    11)
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"repeat('a', 3)
+repeat_range('b', 5, 7)
+at_least('c', 11)"#
+        );
+    }
+
+    #[test]
+    fn test_expression_function_call_rear() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+'a'.optional()
+'b'.one_or_more()
+'c'.zero_or_more_lazy()
+"xyz".name(prefix)
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"optional('a')
+one_or_more('b')
+zero_or_more_lazy('c')
+name("xyz", prefix)"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+'a'.repeat(3)
+'b'.repeat_range(
+    5
+    7
+)
+'c'.at_least(11
+)
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"repeat('a', 3)
+repeat_range('b', 5, 7)
+at_least('c', 11)"#
+        );
+    }
+
+    #[test]
+    fn test_expression_notations() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+'a'?
+'b'+
+'c'*
+'x'??
+'y'+?
+'z'*?
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"optional('a')
+one_or_more('b')
+zero_or_more('c')
+optional_lazy('x')
+one_or_more_lazy('y')
+zero_or_more_lazy('z')"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+'a'{3}
+'b'{5,7}
+'c'{11,}
+'x'{3}?
+'y'{5,7}?
+'z'{11,}?
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"repeat('a', 3)
+repeat_range('b', 5, 7)
+at_least('c', 11)
+repeat_lazy('x', 3)
+repeat_range_lazy('y', 5, 7)
+at_least_lazy('z', 11)"#
+        );
+    }
+
+    #[test]
+    fn test_expression_alternation() {
+        let program = parse_from_str(
+            r#"
+'a' || 'b' || 'c'
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            program,
+            Program {
+                definitions: vec![],
+                expressions: vec![Expression::Alternation(
+                    Box::new(Expression::Alternation(
+                        Box::new(Expression::Literal(Literal::Char('a'))),
+                        Box::new(Expression::Literal(Literal::Char('b'))),
+                    )),
+                    Box::new(Expression::Literal(Literal::Char('c')))
+                )]
+            }
+        );
+
+        assert_eq!(program.to_string(), r#"'a' || 'b' || 'c'"#);
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+char_digit.one_or_more() || [char_word, '-']+
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"one_or_more(char_digit) || one_or_more([char_word, '-'])"#
+        );
+    }
+
+    #[test]
+    fn test_expression_group() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+            ('a', "foo", char_digit)
+            ('b', ("bar", char_digit), end)
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"('a', "foo", char_digit), ('b', ("bar", char_digit), end)"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+            repeat(('a', "foo", char_digit), 3)
+            ('b', repeat("bar", 5), end)
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"repeat(('a', "foo", char_digit), 3)
+('b', repeat("bar", 5), end)"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+            'a' || ('b' || 'c')
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"'a' || ('b' || 'c')"#
         );
     }
 }

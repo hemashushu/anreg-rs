@@ -362,7 +362,7 @@ impl<'a> Lexer<'a> {
                     self.next_char(); // consume char
                 }
                 ' ' | '\t' | '\r' | '\n' | ',' | '|' | '!' | '[' | ']' | '(' | ')' | '/' | '\''
-                | '"' | '?' | '+' | '*' | '{' | '}' => {
+                | '"' | '.' | '?' | '+' | '*' | '{' | '}' => {
                     // terminator chars
                     break;
                 }
@@ -413,7 +413,7 @@ impl<'a> Lexer<'a> {
                     self.next_char(); // consume '_'
                 }
                 ' ' | '\t' | '\r' | '\n' | ',' | '|' | '!' | '[' | ']' | '(' | ')' | '/' | '\''
-                | '"' | '?' | '+' | '*' | '{' | '}' => {
+                | '"' | '.' | '?' | '+' | '*' | '{' | '}' => {
                     // terminator chars
                     break;
                 }
@@ -1067,6 +1067,15 @@ mod tests {
         assert_eq!(
             lex_str_to_vec("foo bar").unwrap(),
             vec![Token::new_identifier("foo"), Token::new_identifier("bar")]
+        );
+
+        assert_eq!(
+            lex_str_to_vec("foo.bar").unwrap(),
+            vec![
+                Token::new_identifier("foo"),
+                Token::Dot,
+                Token::new_identifier("bar")
+            ]
         );
 
         assert_eq!(
