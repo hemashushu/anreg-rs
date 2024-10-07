@@ -1007,7 +1007,7 @@ start, 'a', "foo", char_word
     }
 
     #[test]
-    fn test_expression_function_call() {
+    fn test_parse_expression_function_call() {
         assert_eq!(
             parse_from_str(
                 r#"
@@ -1050,7 +1050,7 @@ at_least('c', 11)"#
     }
 
     #[test]
-    fn test_expression_function_call_rear() {
+    fn test_parse_expression_function_call_rear() {
         assert_eq!(
             parse_from_str(
                 r#"
@@ -1089,7 +1089,7 @@ at_least('c', 11)"#
     }
 
     #[test]
-    fn test_expression_notations() {
+    fn test_parse_expression_notations() {
         assert_eq!(
             parse_from_str(
                 r#"
@@ -1134,7 +1134,7 @@ at_least_lazy('z', 11)"#
     }
 
     #[test]
-    fn test_expression_alternation() {
+    fn test_parse_expression_alternation() {
         let program = parse_from_str(
             r#"
 'a' || 'b' || 'c'
@@ -1171,12 +1171,12 @@ char_digit.one_or_more() || [char_word, '-']+
     }
 
     #[test]
-    fn test_expression_group() {
+    fn test_parse_expression_group() {
         assert_eq!(
             parse_from_str(
                 r#"
-            ('a', "foo", char_digit)
-            ('b', ("bar", char_digit), end)
+('a', "foo", char_digit)
+('b', ("bar", char_digit), end)
 "#,
             )
             .unwrap()
@@ -1187,8 +1187,8 @@ char_digit.one_or_more() || [char_word, '-']+
         assert_eq!(
             parse_from_str(
                 r#"
-            repeat(('a', "foo", char_digit), 3)
-            ('b', repeat("bar", 5), end)
+repeat(('a', "foo", char_digit), 3)
+('b', repeat("bar", 5), end)
 "#,
             )
             .unwrap()
@@ -1200,12 +1200,172 @@ char_digit.one_or_more() || [char_word, '-']+
         assert_eq!(
             parse_from_str(
                 r#"
-            'a' || ('b' || 'c')
+'a' || ('b' || 'c')
 "#,
             )
             .unwrap()
             .to_string(),
             r#"'a' || ('b' || 'c')"#
         );
+    }
+
+    #[test]
+    fn test_parse_macro() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+define(a, "abc")
+start, a, end
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"start, "abc", end"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+define(a, 'a')
+define(b, (a, 'b'))
+define(c, ([a, 'c'], optional(b), b.one_or_more()))
+define(d, (a || b || 'd'))
+start, a, b, c, d, end
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"start, 'a', ('a', 'b'), (['a', 'c'], optional(('a', 'b')), one_or_more(('a', 'b'))), ('a' || ('a', 'b') || 'd'), end"#
+        );
+    }
+
+    #[test]
+    fn test_parse_examples() {
+        assert_eq!(
+            parse_from_str(
+                r#"
+/**
+ * Decimal Numbers Regular Expression
+ */
+char_digit.one_or_more()
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            "one_or_more(char_digit)"
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+/**
+ * Hex Numbers Regular Expression
+ */
+
+// The prefix "0x"
+"0x"
+
+// The hex digits
+['0'..'9', 'a'..'f'].one_or_more()
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            "\"0x\"
+one_or_more(['0'..'9', 'a'..'f'])"
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+/**
+ * Email Address Validated Regular Expression
+ *
+ * Ref:
+ * https://en.wikipedia.org/wiki/Email_address
+ */
+
+start
+
+// User name
+[char_word, '.', '-'].one_or_more()
+
+// Sub-address
+('+', [char_word, '-'].one_or_more()).optional()
+
+// The separator
+'@'
+
+// Domain name
+(
+    ['a'..'z', 'A'..'Z', '0'..'9', '-'].one_or_more()
+    '.'
+).one_or_more()
+
+// Top-level domain
+['a'..'z'].at_least(2)
+
+end
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            "start
+one_or_more([char_word, '.', '-'])
+optional(('+', one_or_more([char_word, '-'])))
+'@'
+one_or_more((one_or_more(['a'..'z', 'A'..'Z', '0'..'9', '-']), '.'))
+at_least(['a'..'z'], 2)
+end"
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+/**
+ * IPv4 Address Validated Regular Expression
+ */
+define(num_25x, ("25", ['0'..'5']))
+define(num_2xx, ('2', ['0'..'4'], char_digit))
+define(num_1xx, ('1', char_digit, char_digit))
+define(num_xx, (['1'..'9'], char_digit))
+define(num_x, char_digit)
+define(ip_num, (num_25x || num_2xx || num_1xx || num_xx || num_x))
+
+start, (ip_num, '.').repeat(3), ip_num, end
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            "start
+repeat((((\"25\", ['0'..'5']) || ('2', ['0'..'4'], char_digit) || ('1', char_digit, char_digit) || (['1'..'9'], char_digit) || char_digit), '.'), 3)
+((\"25\", ['0'..'5']) || ('2', ['0'..'4'], char_digit) || ('1', char_digit, char_digit) || (['1'..'9'], char_digit) || char_digit), end"
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+/**
+ * Simple HTML tag Regular Expression
+ */
+'<'                                                     // opening tag
+name(char_word+, tag_name)                              // tag name
+(char_space, char_word+, '=', '"', char_word+, '"')*    // attributes
+'>'
+char_any+?                                              // text content
+'<', '/', tag_name, '>'                                 // closing tag
+"#,
+            )
+            .unwrap()
+            .to_string(),
+            "'<'
+name(one_or_more(char_word), tag_name)
+zero_or_more((char_space, one_or_more(char_word), '=', '\"', one_or_more(char_word), '\"'))
+'>'
+one_or_more_lazy(char_any)
+'<', '/', tag_name, '>'"
+        );
+
+
     }
 }
