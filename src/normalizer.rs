@@ -10,24 +10,8 @@ use crate::{
     token::{Token, TokenWithRange},
 };
 
-pub fn normalize(iter1: &mut dyn Iterator<Item = TokenWithRange>) -> Vec<TokenWithRange> {
-    // step 1: remove all comments.
-    let mut stage1: Vec<TokenWithRange> = vec![];
-    while let Some(tr) = iter1.next() {
-        match tr {
-            TokenWithRange {
-                token: Token::Comment(_),
-                ..
-            } => {
-                // consume comments
-            }
-            _ => {
-                stage1.push(tr);
-            }
-        }
-    }
-
-    // step 2: combine multiple continuous newlines into one newline.
+pub fn normalize(tokens: Vec<TokenWithRange>) -> Vec<TokenWithRange> {
+    // combine multiple continuous newlines into one newline.
     // rules:
     //   + blanks => blank
     //   + comma + blank(s) => comma
@@ -39,49 +23,49 @@ pub fn normalize(iter1: &mut dyn Iterator<Item = TokenWithRange>) -> Vec<TokenWi
     //   + comma + comment(s) + comma => comma + comma
     //   + blank(s) + comment(s) + blank(s) => blank
 
-    let mut prev_iter2 = stage1.into_iter();
-    let mut iter2 = PeekableIter::new(&mut prev_iter2, 1);
-    let mut stage2: Vec<TokenWithRange> = vec![];
+    let mut clean_token_iter = tokens.into_iter();
+    let mut peekable_clean_token_iter = PeekableIter::new(&mut clean_token_iter, 1);
+    let mut normalized_tokens: Vec<TokenWithRange> = vec![];
 
-    while let Some(tr) = iter2.next() {
+    while let Some(token_with_range) = peekable_clean_token_iter.next() {
         let TokenWithRange {
             token,
             range: current_range,
-        } = &tr;
+        } = &token_with_range;
 
         let mut start_range = *current_range;
         let mut end_range = start_range;
 
-        let ntr = match token {
+        let compact_token_with_range = match token {
             Token::NewLine => {
                 // consume continuous newlines
                 while let Some(TokenWithRange {
                     token: Token::NewLine,
                     range: current_range,
-                }) = iter2.peek(0)
+                }) = peekable_clean_token_iter.peek(0)
                 {
                     end_range = *current_range;
-                    iter2.next();
+                    peekable_clean_token_iter.next();
                 }
 
                 // found ','
                 if let Some(TokenWithRange {
                     token: Token::Comma,
                     range: current_range,
-                }) = iter2.peek(0)
+                }) = peekable_clean_token_iter.peek(0)
                 {
                     // consume comma
                     start_range = *current_range;
                     end_range = start_range;
-                    iter2.next();
+                    peekable_clean_token_iter.next();
 
                     // consume trailing continuous newlines
                     while let Some(TokenWithRange {
                         token: Token::NewLine,
                         range: _,
-                    }) = iter2.peek(0)
+                    }) = peekable_clean_token_iter.peek(0)
                     {
-                        iter2.next();
+                        peekable_clean_token_iter.next();
                     }
 
                     TokenWithRange::new(
@@ -100,9 +84,9 @@ pub fn normalize(iter1: &mut dyn Iterator<Item = TokenWithRange>) -> Vec<TokenWi
                 while let Some(TokenWithRange {
                     token: Token::NewLine,
                     range: _,
-                }) = iter2.peek(0)
+                }) = peekable_clean_token_iter.peek(0)
                 {
-                    iter2.next();
+                    peekable_clean_token_iter.next();
                 }
 
                 TokenWithRange::new(
@@ -110,30 +94,30 @@ pub fn normalize(iter1: &mut dyn Iterator<Item = TokenWithRange>) -> Vec<TokenWi
                     Location::from_range_pair(&start_range, &end_range),
                 )
             }
-            _ => tr,
+            _ => token_with_range,
         };
 
-        stage2.push(ntr);
+        normalized_tokens.push(compact_token_with_range);
     }
 
-    // step 3: remove document leading and tailing newlines.
+    // remove document leading and tailing newlines.
     if let Some(TokenWithRange {
         token: Token::NewLine,
         ..
-    }) = stage2.first()
+    }) = normalized_tokens.first()
     {
-        stage2.remove(0);
+        normalized_tokens.remove(0);
     }
 
     if let Some(TokenWithRange {
         token: Token::NewLine,
         ..
-    }) = stage2.last()
+    }) = normalized_tokens.last()
     {
-        stage2.pop();
+        normalized_tokens.pop();
     }
 
-    stage2
+    normalized_tokens
 }
 
 #[cfg(test)]
@@ -142,6 +126,7 @@ mod tests {
 
     use crate::{
         charposition::CharsWithPositionIter,
+        commentcleaner::clean,
         error::Error,
         lexer::Lexer,
         location::Location,
@@ -157,45 +142,21 @@ mod tests {
         let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
         let mut lexer = Lexer::new(&mut peekable_char_position_iter);
         let tokens = lexer.lex()?;
-        let mut token_iter = tokens.into_iter();
-        let normalized_tokens = normalize(&mut token_iter);
+        let clean_tokens = clean(tokens);
+        let normalized_tokens = normalize(clean_tokens);
         Ok(normalized_tokens)
     }
 
     fn lex_str_to_vec(s: &str) -> Result<Vec<Token>, Error> {
         let tokens = lex_str_to_vec_with_range(s)?
-            .iter()
-            .map(|e| e.token.to_owned())
+            .into_iter()
+            .map(|e| e.token)
             .collect::<Vec<Token>>();
         Ok(tokens)
     }
 
     #[test]
-    fn test_clear_comments() {
-        assert_eq!(
-            lex_str_to_vec(
-                r#"'1' // line comment 1
-                // line comment 2
-                '2' /* block comment 1 */
-                /*
-                block comment 2
-                */
-                '3'
-                "#
-            )
-            .unwrap(),
-            vec![
-                Token::Char('1'),
-                Token::NewLine,
-                Token::Char('2'),
-                Token::NewLine,
-                Token::Char('3'),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_normalize_blanks_commas_and_comments() {
+    fn test_normalize_blanks_and_commas() {
         assert_eq!(
             // test items:
             //
@@ -382,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trim_blanks() {
+    fn test_normalize_trim() {
         assert_eq!(
             lex_str_to_vec(
                 r#"

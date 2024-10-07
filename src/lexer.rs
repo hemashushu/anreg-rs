@@ -73,8 +73,8 @@ impl<'a> Lexer<'a> {
     pub fn lex(&mut self) -> Result<Vec<TokenWithRange>, Error> {
         let mut token_ranges = vec![];
 
-        while let Some(c) = self.peek_char(0) {
-            match c {
+        while let Some(current_char) = self.peek_char(0) {
+            match current_char {
                 ' ' | '\t' => {
                     self.next_char(); // consume whitespace
                 }
@@ -452,9 +452,9 @@ impl<'a> Lexer<'a> {
 
         self.next_char(); // consume "'"
 
-        let ch = match self.next_char() {
-            Some(prev_previous_char) => {
-                match prev_previous_char {
+        let character = match self.next_char() {
+            Some(previous_previous_char) => {
+                match previous_previous_char {
                     '\\' => {
                         // escape chars
                         match self.next_char() {
@@ -523,7 +523,7 @@ impl<'a> Lexer<'a> {
                     }
                     _ => {
                         // ordinary char
-                        prev_previous_char
+                        previous_previous_char
                     }
                 }
             }
@@ -555,11 +555,11 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let ch_range = Location::from_position_pair_with_end_included(
+        let character_range = Location::from_position_pair_with_end_included(
             &self.pop_saved_position(),
             &self.last_position,
         );
-        Ok(TokenWithRange::new(Token::Char(ch), ch_range))
+        Ok(TokenWithRange::new(Token::Char(character), character_range))
     }
 
     fn unescape_unicode(&mut self) -> Result<char, Error> {
@@ -622,13 +622,13 @@ impl<'a> Lexer<'a> {
 
         let codepoint = u32::from_str_radix(&codepoint_string, 16).unwrap();
 
-        if let Some(ch) = char::from_u32(codepoint) {
+        if let Some(c) = char::from_u32(codepoint) {
             // valid code point:
             // 0 to 0x10FFFF, inclusive
             //
             // ref:
             // https://doc.rust-lang.org/std/primitive.char.html
-            Ok(ch)
+            Ok(c)
         } else {
             Err(Error::MessageWithLocation(
                 "Invalid unicode code point.".to_owned(),
@@ -646,49 +646,49 @@ impl<'a> Lexer<'a> {
 
         self.next_char(); // consume '"'
 
-        let mut ss = String::new();
+        let mut final_string = String::new();
 
         loop {
             match self.next_char() {
-                Some(prev_previous_char) => {
-                    match prev_previous_char {
+                Some(previous_previous_char) => {
+                    match previous_previous_char {
                         '\\' => {
                             // escape chars
                             match self.next_char() {
                                 Some(previous_char) => {
                                     match previous_char {
                                         '\\' => {
-                                            ss.push('\\');
+                                            final_string.push('\\');
                                         }
                                         '\'' => {
                                             // single quote does not necessary to be escaped for string
                                             // however, it is still supported for consistency between chars and strings.
-                                            ss.push('\'');
+                                            final_string.push('\'');
                                         }
                                         '"' => {
-                                            ss.push('"');
+                                            final_string.push('"');
                                         }
                                         't' => {
                                             // horizontal tabulation
-                                            ss.push('\t');
+                                            final_string.push('\t');
                                         }
                                         'r' => {
                                             // carriage return (CR, ascii 13)
-                                            ss.push('\r');
+                                            final_string.push('\r');
                                         }
                                         'n' => {
                                             // new line character (line feed, LF, ascii 10)
-                                            ss.push('\n');
+                                            final_string.push('\n');
                                         }
                                         '0' => {
                                             // null char
-                                            ss.push('\0');
+                                            final_string.push('\0');
                                         }
                                         'u' => {
                                             if self.peek_char_and_equals(0, '{') {
                                                 // unicode code point, e.g. '\u{2d}', '\u{6587}'
                                                 let ch = self.unescape_unicode()?;
-                                                ss.push(ch);
+                                                final_string.push(ch);
                                             } else {
                                                 return Err(Error::MessageWithLocation(
                                                     "Missing the brace for unicode escape sequence.".to_owned(),
@@ -721,7 +721,7 @@ impl<'a> Lexer<'a> {
                         }
                         _ => {
                             // ordinary char
-                            ss.push(prev_previous_char);
+                            final_string.push(previous_previous_char);
                         }
                     }
                 }
@@ -734,12 +734,15 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let ss_range = Location::from_position_pair_with_end_included(
+        let final_string_range = Location::from_position_pair_with_end_included(
             &self.pop_saved_position(),
             &self.last_position,
         );
 
-        Ok(TokenWithRange::new(Token::String(ss), ss_range))
+        Ok(TokenWithRange::new(
+            Token::String(final_string),
+            final_string_range,
+        ))
     }
 
     fn lex_line_comment(&mut self) -> Result<TokenWithRange, Error> {
@@ -872,24 +875,6 @@ mod tests {
 
     use super::{Lexer, Token};
 
-    impl Token {
-        fn new_identifier(s: &str) -> Self {
-            Token::Identifier(s.to_owned())
-        }
-
-        fn new_symbol(s: &str) -> Self {
-            Token::Symbol(s.to_owned())
-        }
-
-        fn new_preset_charset(s: &str) -> Self {
-            Token::PresetCharSet(s.to_owned())
-        }
-
-        fn new_string(s: &str) -> Self {
-            Token::String(s.to_owned())
-        }
-    }
-
     fn lex_str_to_vec_with_range(s: &str) -> Result<Vec<TokenWithRange>, Error> {
         let mut chars = s.chars();
         let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
@@ -900,8 +885,8 @@ mod tests {
 
     fn lex_str_to_vec(s: &str) -> Result<Vec<Token>, Error> {
         let tokens = lex_str_to_vec_with_range(s)?
-            .iter()
-            .map(|e| e.token.to_owned())
+            .into_iter()
+            .map(|e| e.token)
             .collect::<Vec<Token>>();
         Ok(tokens)
     }

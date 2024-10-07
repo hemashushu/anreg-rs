@@ -8,15 +8,15 @@ use std::fmt::{Display, Write};
 
 #[derive(Debug, PartialEq)]
 pub struct Program {
-    pub definitions: Vec<Definition>,
+    // pub definitions: Vec<Definition>,
     pub expressions: Vec<Expression>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Definition {
-    pub identifier: String,
-    pub expression: Box<Expression>,
-}
+// #[derive(Debug, PartialEq)]
+// pub struct Definition {
+//     pub identifier: String,
+//     pub expression: Box<Expression>,
+// }
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
@@ -131,8 +131,8 @@ impl Display for CharSetElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CharSetElement::Char(c) => write!(f, "'{}'", c),
-            CharSetElement::CharRange(cr) => write!(f, "{}", cr),
-            CharSetElement::PresetCharSet(pcs) => f.write_str(pcs),
+            CharSetElement::CharRange(c) => write!(f, "{}", c),
+            CharSetElement::PresetCharSet(p) => f.write_str(p),
             CharSetElement::Symbol(s) => f.write_str(s),
         }
     }
@@ -154,8 +154,8 @@ impl Display for Literal {
         match self {
             Literal::Char(c) => write!(f, "'{}'", c),
             Literal::String(s) => write!(f, "\"{}\"", s),
-            Literal::CharSet(cs) => write!(f, "{}", cs),
-            Literal::PresetCharSet(pcs) => f.write_str(pcs),
+            Literal::CharSet(c) => write!(f, "{}", c),
+            Literal::PresetCharSet(p) => f.write_str(p),
             Literal::Symbol(s) => f.write_str(s),
         }
     }
@@ -196,45 +196,38 @@ impl Display for Expression {
     }
 }
 
-impl Display for Definition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "define({}, {})", self.identifier, self.expression)
-    }
-}
+// impl Display for Definition {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "define({}, {})", self.identifier, self.expression)
+//     }
+// }
 
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut es: Vec<String> = vec![];
-        for i in 0..self.expressions.len() {
-            match &self.expressions[i] {
-                Expression::FunctionCall(fc) => {
-                    if i != 0 {
+        let mut exp_strings: Vec<String> = vec![];
+        for (idx, expression) in self.expressions.iter().enumerate() {
+            match expression {
+                Expression::FunctionCall(function_call) => {
+                    if idx != 0 {
                         // replace the last ',' with '\n'
-                        es.pop();
-                        es.push("\n".to_owned());
+                        exp_strings.pop();
+                        exp_strings.push("\n".to_owned());
                     }
-                    es.push(fc.to_string());
-                    es.push("\n".to_owned());
+                    exp_strings.push(function_call.to_string());
+                    exp_strings.push("\n".to_owned());
                 }
-                e => {
-                    es.push(e.to_string());
-                    es.push(", ".to_owned());
+                _ => {
+                    exp_strings.push(expression.to_string());
+                    exp_strings.push(", ".to_owned());
                 }
             }
         }
 
-        let ds: Vec<String> = self.definitions.iter().map(|e| e.to_string()).collect();
-
-        let mut p = vec![];
-        if !ds.is_empty() {
-            p.push(ds.join("\n"));
+        if !exp_strings.is_empty() {
+            exp_strings.pop(); // remove the last ',' or '\n'
+            write!(f, "{}", exp_strings.join(""))
+        } else {
+            f.write_str("")
         }
-
-        if !es.is_empty() {
-            es.pop(); // remove the last ',' or '\n'
-            p.push(es.join(""));
-        }
-
-        write!(f, "{}", p.join("\n"))
     }
 }

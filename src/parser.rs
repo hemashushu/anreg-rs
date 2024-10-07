@@ -6,13 +6,15 @@
 
 use crate::{
     ast::{
-        CharRange, CharSet, CharSetElement, Definition, Expression, FunctionCall, FunctionCallArg,
+        CharRange, CharSet, CharSetElement, Expression, FunctionCall, FunctionCallArg,
         FunctionName, Literal, Program,
     },
     charposition::CharsWithPositionIter,
+    commentcleaner::clean,
     error::Error,
     lexer::Lexer,
     location::Location,
+    macroexpander::expand,
     normalizer::normalize,
     peekableiter::PeekableIter,
     token::{Token, TokenWithRange},
@@ -170,20 +172,23 @@ impl<'a> Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn parse_program(&mut self) -> Result<Program, Error> {
-        let mut definitions = vec![];
+        // let mut definitions = vec![];
         let mut expressions = vec![];
 
         while let Some(token) = self.peek_token(0) {
-            match token {
-                Token::Identifier(id) if id == "define" => {
-                    let definition = self.parse_definition_statement()?;
-                    definitions.push(definition);
-                }
-                _ => {
-                    let expression = self.parse_expression()?;
-                    expressions.push(expression);
-                }
-            }
+            // match token {
+            //     Token::Identifier(id) if id == "define" => {
+            //         let definition = self.parse_definition_statement()?;
+            //         definitions.push(definition);
+            //     }
+            //     _ => {
+            //         let expression = self.parse_expression()?;
+            //         expressions.push(expression);
+            //     }
+            // }
+
+            let expression = self.parse_expression()?;
+            expressions.push(expression);
 
             // consume separator
             let found_sep = self.consume_new_line_or_comma_if_exist();
@@ -193,36 +198,36 @@ impl<'a> Parser<'a> {
         }
 
         let program = Program {
-            definitions,
+            // definitions,
             expressions,
         };
 
         Ok(program)
     }
 
-    fn parse_definition_statement(&mut self) -> Result<Definition, Error> {
-        // "define" "(" identifier "," expression ")" ?
-        // --------                                -
-        // ^                                       ^-- to here
-        // | current, validated
-
-        self.next_token(); // consume "define"
-        self.expect_token(&Token::LeftParen)?; // consume '('
-        self.consume_new_line_if_exist(); // consume trailing new-line
-
-        let identifier = self.expect_identifier()?;
-        self.expect_new_line_or_comma()?; // consume arg separator
-
-        let expression = self.parse_expression()?;
-        self.consume_new_line_if_exist(); // consume trailing new-line
-
-        self.expect_token(&Token::RightParen)?; // consume ')'
-
-        Ok(Definition {
-            expression: Box::new(expression),
-            identifier,
-        })
-    }
+    //     fn parse_definition_statement(&mut self) -> Result<Definition, Error> {
+    //         // "define" "(" identifier "," expression ")" ?
+    //         // --------                                -
+    //         // ^                                       ^-- to here
+    //         // | current, validated
+    //
+    //         self.next_token(); // consume "define"
+    //         self.expect_token(&Token::LeftParen)?; // consume '('
+    //         self.consume_new_line_if_exist(); // consume trailing new-line
+    //
+    //         let identifier = self.expect_identifier()?;
+    //         self.expect_new_line_or_comma()?; // consume arg separator
+    //
+    //         let expression = self.parse_expression()?;
+    //         self.consume_new_line_if_exist(); // consume trailing new-line
+    //
+    //         self.expect_token(&Token::RightParen)?; // consume ')'
+    //
+    //         Ok(Definition {
+    //             expression: Box::new(expression),
+    //             identifier,
+    //         })
+    //     }
 
     fn parse_expression(&mut self) -> Result<Expression, Error> {
         // token ...
@@ -391,10 +396,10 @@ impl<'a> Parser<'a> {
             // ```
             self.next_token(); // consume ','
 
-            let to_optional = if let Some(Token::Number(to)) = self.peek_token(0) {
-                let n = *to;
+            let to_optional = if let Some(Token::Number(to_ref)) = self.peek_token(0) {
+                let to = *to_ref;
                 self.next_token(); // consume number
-                Some(n)
+                Some(to)
             } else {
                 None
             };
@@ -483,13 +488,13 @@ impl<'a> Parser<'a> {
             }
 
             match token {
-                Token::Number(n) => {
-                    let num = *n;
+                Token::Number(num_ref) => {
+                    let num = *num_ref;
                     self.next_token(); // consume number
                     args.push(FunctionCallArg::Number(num));
                 }
-                Token::Identifier(s) => {
-                    let id = s.to_owned();
+                Token::Identifier(id_ref) => {
+                    let id = id_ref.to_owned();
                     self.next_token(); // consume identifier
                     args.push(FunctionCallArg::Identifier(id));
                 }
@@ -509,13 +514,13 @@ impl<'a> Parser<'a> {
 
         self.expect_token(&Token::RightParen)?; // consume ')'
 
-        let fc = FunctionCall {
+        let function_call = FunctionCall {
             name,
             expression: Box::new(expression),
             args,
         };
 
-        Ok(fc)
+        Ok(function_call)
     }
 
     fn parse_base_expression(&mut self) -> Result<Expression, Error> {
@@ -613,13 +618,13 @@ impl<'a> Parser<'a> {
             }
 
             match token {
-                Token::Number(n) => {
-                    let num = *n;
+                Token::Number(num_ref) => {
+                    let num = *num_ref;
                     self.next_token(); // consume number
                     args.push(FunctionCallArg::Number(num));
                 }
-                Token::Identifier(s) => {
-                    let id = s.to_owned();
+                Token::Identifier(id_ref) => {
+                    let id = id_ref.to_owned();
                     self.next_token(); // consume identifier
                     args.push(FunctionCallArg::Identifier(id));
                 }
@@ -681,25 +686,25 @@ impl<'a> Parser<'a> {
                             elements,
                         })
                     }
-                    Token::Char(c) => {
-                        let ch = *c;
+                    Token::Char(c_ref) => {
+                        let c = *c_ref;
                         self.next_token(); // consume char
-                        Literal::Char(ch)
+                        Literal::Char(c)
                     }
-                    Token::String(s) => {
-                        let os = s.to_owned();
+                    Token::String(string_ref) => {
+                        let string = string_ref.to_owned();
                         self.next_token(); // consume string
-                        Literal::String(os)
+                        Literal::String(string)
                     }
-                    Token::PresetCharSet(p) => {
-                        let op = p.to_owned();
+                    Token::PresetCharSet(preset_charset_ref) => {
+                        let preset_charset = preset_charset_ref.to_owned();
                         self.next_token(); // consume preset charset
-                        Literal::PresetCharSet(op)
+                        Literal::PresetCharSet(preset_charset)
                     }
-                    Token::Symbol(s) => {
-                        let os = s.to_owned();
+                    Token::Symbol(symbol_ref) => {
+                        let symbol = symbol_ref.to_owned();
                         self.next_token(); // consume symbol
-                        Literal::Symbol(os)
+                        Literal::Symbol(symbol)
                     }
                     _ => {
                         return Err(Error::MessageWithLocation(
@@ -742,23 +747,23 @@ impl<'a> Parser<'a> {
                     let char_range = self.parse_char_range()?;
                     elements.push(CharSetElement::CharRange(char_range));
                 }
-                Token::Char(c) => {
+                Token::Char(c_ref) => {
                     // char
-                    let ch = *c;
+                    let c = *c_ref;
                     self.next_token(); // consume char
-                    elements.push(CharSetElement::Char(ch));
+                    elements.push(CharSetElement::Char(c));
                 }
-                Token::PresetCharSet(p) => {
+                Token::PresetCharSet(preset_charset_ref) => {
                     // preset char set
-                    let op = p.to_owned();
+                    let preset_charset = preset_charset_ref.to_owned();
                     self.next_token(); // consume preset charset
-                    elements.push(CharSetElement::PresetCharSet(op));
+                    elements.push(CharSetElement::PresetCharSet(preset_charset));
                 }
-                Token::Symbol(s) => {
+                Token::Symbol(symbol_ref) => {
                     // symbol, such as "start", "end", "bound"
-                    let os = s.to_owned();
+                    let symbol = symbol_ref.to_owned();
                     self.next_token(); // consume symbol
-                    elements.push(CharSetElement::Symbol(os));
+                    elements.push(CharSetElement::Symbol(symbol));
                 }
                 _ => {
                     return Err(Error::MessageWithLocation(
@@ -786,17 +791,17 @@ impl<'a> Parser<'a> {
         // |    | vali..  | validated
         // | current, validated
 
-        let start = self.expect_char()?; // consume start char
+        let char_start = self.expect_char()?; // consume start char
         self.consume_new_line_if_exist();
 
         self.next_token(); // consume '..'
         self.consume_new_line_if_exist();
 
-        let end = self.expect_char()?; // consume end char
+        let char_end = self.expect_char()?; // consume end char
 
         Ok(CharRange {
-            start,
-            end_included: end,
+            start: char_start,
+            end_included: char_end,
         })
     }
 }
@@ -878,12 +883,13 @@ pub fn parse_from_str(s: &str) -> Result<Program, Error> {
     let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
     let mut lexer = Lexer::new(&mut peekable_char_position_iter);
     let tokens = lexer.lex()?;
-    let mut token_iter = tokens.into_iter();
-    let normalized_tokens = normalize(&mut token_iter);
-    let mut normalized_token_iter = normalized_tokens.into_iter();
-    let mut peekable_normalized_iter = PeekableIter::new(&mut normalized_token_iter, 3);
-
-    let mut parser = Parser::new(&mut peekable_normalized_iter);
+    let clean_tokens = clean(tokens);
+    let normalized_tokens = normalize(clean_tokens);
+    let expanded_tokens = expand(normalized_tokens)?;
+    let final_tokens = normalize(expanded_tokens);
+    let mut final_token_iter = final_tokens.into_iter();
+    let mut peekable_final_token_iter = PeekableIter::new(&mut final_token_iter, 3);
+    let mut parser = Parser::new(&mut peekable_final_token_iter);
     parser.parse_program()
 }
 
@@ -908,7 +914,7 @@ start, 'a', "foo", char_word
         assert_eq!(
             program,
             Program {
-                definitions: vec![],
+                // definitions: vec![],
                 expressions: vec![
                     Expression::Literal(Literal::Symbol("start".to_owned())),
                     Expression::Literal(Literal::Char('a')),
@@ -933,7 +939,7 @@ start, 'a', "foo", char_word
         assert_eq!(
             program,
             Program {
-                definitions: vec![],
+                // definitions: vec![],
                 expressions: vec![Expression::Literal(Literal::CharSet(CharSet {
                     negative: false,
                     elements: vec![
@@ -1139,7 +1145,7 @@ at_least_lazy('z', 11)"#
         assert_eq!(
             program,
             Program {
-                definitions: vec![],
+                // definitions: vec![],
                 expressions: vec![Expression::Alternation(
                     Box::new(Expression::Alternation(
                         Box::new(Expression::Literal(Literal::Char('a'))),
