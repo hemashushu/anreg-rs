@@ -9,10 +9,9 @@ use crate::{
         CharRange, CharSet, CharSetElement, Expression, FunctionCall, FunctionCallArg,
         FunctionName, Literal, Program,
     },
-    charposition::CharsWithPositionIter,
     commentcleaner::clean,
     error::Error,
-    lexer::Lexer,
+    lexer::lex_from_str,
     location::Location,
     macroexpander::expand,
     normalizer::normalize,
@@ -56,12 +55,12 @@ impl<'a> Parser<'a> {
             Some(TokenWithRange { token, .. }) if token == expected_token)
     }
 
-    fn peek_range(&self, offset: usize) -> Option<&Location> {
-        match self.upstream.peek(offset) {
-            Some(TokenWithRange { range, .. }) => Some(range),
-            None => None,
-        }
-    }
+    // fn peek_range(&self, offset: usize) -> Option<&Location> {
+    //     match self.upstream.peek(offset) {
+    //         Some(TokenWithRange { range, .. }) => Some(range),
+    //         None => None,
+    //     }
+    // }
 
     // consume '\n' if it exists.
     fn consume_new_line_if_exist(&mut self) -> bool {
@@ -104,21 +103,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_new_line_or_comma(&mut self) -> Result<(), Error> {
-        match self.peek_token(0) {
-            Some(Token::NewLine | Token::Comma) => {
-                self.next_token();
-                Ok(())
-            }
-            Some(_) => Err(Error::MessageWithLocation(
-                "Expect a comma or new-line.".to_owned(),
-                self.peek_range(0).unwrap().get_position_by_range_start(),
-            )),
-            None => Err(Error::UnexpectedEndOfDocument(
-                "Expect a comma or new-line.".to_owned(),
-            )),
-        }
-    }
+    // fn expect_new_line_or_comma(&mut self) -> Result<(), Error> {
+    //     match self.peek_token(0) {
+    //         Some(Token::NewLine | Token::Comma) => {
+    //             self.next_token();
+    //             Ok(())
+    //         }
+    //         Some(_) => Err(Error::MessageWithLocation(
+    //             "Expect a comma or new-line.".to_owned(),
+    //             self.peek_range(0).unwrap().get_position_by_range_start(),
+    //         )),
+    //         None => Err(Error::UnexpectedEndOfDocument(
+    //             "Expect a comma or new-line.".to_owned(),
+    //         )),
+    //     }
+    // }
 
     fn expect_identifier(&mut self) -> Result<String, Error> {
         match self.peek_token(0) {
@@ -175,18 +174,7 @@ impl<'a> Parser<'a> {
         // let mut definitions = vec![];
         let mut expressions = vec![];
 
-        while let Some(token) = self.peek_token(0) {
-            // match token {
-            //     Token::Identifier(id) if id == "define" => {
-            //         let definition = self.parse_definition_statement()?;
-            //         definitions.push(definition);
-            //     }
-            //     _ => {
-            //         let expression = self.parse_expression()?;
-            //         expressions.push(expression);
-            //     }
-            // }
-
+        while let Some(_) = self.peek_token(0) {
             let expression = self.parse_expression()?;
             expressions.push(expression);
 
@@ -878,18 +866,14 @@ fn function_name_from_notation_token(
 }
 
 pub fn parse_from_str(s: &str) -> Result<Program, Error> {
-    let mut chars = s.chars();
-    let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
-    let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
-    let mut lexer = Lexer::new(&mut peekable_char_position_iter);
-    let tokens = lexer.lex()?;
+    let tokens = lex_from_str(s)?;
     let clean_tokens = clean(tokens);
     let normalized_tokens = normalize(clean_tokens);
     let expanded_tokens = expand(normalized_tokens)?;
-    let final_tokens = normalize(expanded_tokens);
-    let mut final_token_iter = final_tokens.into_iter();
-    let mut peekable_final_token_iter = PeekableIter::new(&mut final_token_iter, 3);
-    let mut parser = Parser::new(&mut peekable_final_token_iter);
+    let expanded_and_normalized_tokens = normalize(expanded_tokens);
+    let mut token_iter = expanded_and_normalized_tokens.into_iter();
+    let mut peekable_token_iter = PeekableIter::new(&mut token_iter, 3);
+    let mut parser = Parser::new(&mut peekable_token_iter);
     parser.parse_program()
 }
 
@@ -1365,7 +1349,5 @@ zero_or_more((char_space, one_or_more(char_word), '=', '\"', one_or_more(char_wo
 one_or_more_lazy(char_any)
 '<', '/', tag_name, '>'"
         );
-
-
     }
 }

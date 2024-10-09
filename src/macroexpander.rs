@@ -190,24 +190,24 @@ impl<'a> DefinitionExtractor<'a> {
         }
     }
 
-    fn expect_token(&mut self, expected_token: &Token) -> Result<(), Error> {
-        match self.next_token() {
-            Some(token) => {
-                if &token == expected_token {
-                    Ok(())
-                } else {
-                    Err(Error::MessageWithLocation(
-                        format!("Expect token: {}.", expected_token.get_description()),
-                        self.last_range.get_position_by_range_start(),
-                    ))
-                }
-            }
-            None => Err(Error::UnexpectedEndOfDocument(format!(
-                "Expect token: {}.",
-                expected_token.get_description()
-            ))),
-        }
-    }
+    // fn expect_token(&mut self, expected_token: &Token) -> Result<(), Error> {
+    //     match self.next_token() {
+    //         Some(token) => {
+    //             if &token == expected_token {
+    //                 Ok(())
+    //             } else {
+    //                 Err(Error::MessageWithLocation(
+    //                     format!("Expect token: {}.", expected_token.get_description()),
+    //                     self.last_range.get_position_by_range_start(),
+    //                 ))
+    //             }
+    //         }
+    //         None => Err(Error::UnexpectedEndOfDocument(format!(
+    //             "Expect token: {}.",
+    //             expected_token.get_description()
+    //         ))),
+    //     }
+    // }
 
     fn expect_new_line_or_comma(&mut self) -> Result<(), Error> {
         match self.peek_token(0) {
@@ -279,33 +279,26 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        charposition::CharsWithPositionIter,
         commentcleaner::clean,
         error::Error,
-        lexer::Lexer,
-        location::Location,
+        lexer::lex_from_str,
         normalizer::normalize,
-        peekableiter::PeekableIter,
         token::{Token, TokenWithRange},
     };
 
     use super::expand;
 
-    fn lex_str_to_vec_with_range(s: &str) -> Result<Vec<TokenWithRange>, Error> {
-        let mut chars = s.chars();
-        let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
-        let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
-        let mut lexer = Lexer::new(&mut peekable_char_position_iter);
-        let tokens = lexer.lex()?;
+    fn expanded_lex_from_str(s: &str) -> Result<Vec<TokenWithRange>, Error> {
+        let tokens = lex_from_str(s)?;
         let clean_tokens = clean(tokens);
         let normalized_tokens = normalize(clean_tokens);
         let expanded_tokens = expand(normalized_tokens)?;
-        let final_tokens = normalize(expanded_tokens);
-        Ok(final_tokens)
+        let expanded_and_normalized_tokens = normalize(expanded_tokens);
+        Ok(expanded_and_normalized_tokens)
     }
 
-    fn lex_str_to_vec(s: &str) -> Result<Vec<Token>, Error> {
-        let tokens = lex_str_to_vec_with_range(s)?
+    fn expanded_lex_from_str_without_location(s: &str) -> Result<Vec<Token>, Error> {
+        let tokens = expanded_lex_from_str(s)?
             .into_iter()
             .map(|e| e.token)
             .collect::<Vec<Token>>();
@@ -315,7 +308,7 @@ mod tests {
     #[test]
     fn test_expand() {
         assert_eq!(
-            lex_str_to_vec(
+            expanded_lex_from_str_without_location(
                 r#"
             define(a, 'a')
             start, a, end
@@ -332,7 +325,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec(
+            expanded_lex_from_str_without_location(
                 r#"
             define(a, 'a')
             define(b, a+)
@@ -353,7 +346,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec(
+            expanded_lex_from_str_without_location(
                 r#"
             define(a, 'a')
             define(b, (a, 'b'))

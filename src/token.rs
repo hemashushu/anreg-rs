@@ -135,21 +135,3 @@ impl TokenWithRange {
         }
     }
 }
-
-impl Token {
-    pub fn new_identifier(s: &str) -> Self {
-        Token::Identifier(s.to_owned())
-    }
-
-    pub fn new_symbol(s: &str) -> Self {
-        Token::Symbol(s.to_owned())
-    }
-
-    pub fn new_preset_charset(s: &str) -> Self {
-        Token::PresetCharSet(s.to_owned())
-    }
-
-    pub fn new_string(s: &str) -> Self {
-        Token::String(s.to_owned())
-    }
-}

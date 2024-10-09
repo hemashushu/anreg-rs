@@ -5,21 +5,29 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 use crate::{
-    charposition::CharWithPosition,
+    charposition::{CharWithPosition, CharsWithPositionIter},
     error::Error,
     location::Location,
     peekableiter::PeekableIter,
     token::{Comment, Token, TokenWithRange},
 };
 
-pub struct Lexer<'a> {
+pub fn lex_from_str(s: &str) -> Result<Vec<TokenWithRange>, Error> {
+    let mut chars = s.chars();
+    let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
+    let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
+    let mut lexer = Lexer::new(&mut peekable_char_position_iter);
+    lexer.lex()
+}
+
+struct Lexer<'a> {
     upstream: &'a mut PeekableIter<'a, CharWithPosition>,
     last_position: Location,
     saved_positions: Vec<Location>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(upstream: &'a mut PeekableIter<'a, CharWithPosition>) -> Self {
+    fn new(upstream: &'a mut PeekableIter<'a, CharWithPosition>) -> Self {
         Self {
             upstream,
             last_position: Location::new_position(0, 0, 0, 0),
@@ -70,7 +78,7 @@ impl<'a> Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn lex(&mut self) -> Result<Vec<TokenWithRange>, Error> {
+    fn lex(&mut self) -> Result<Vec<TokenWithRange>, Error> {
         let mut token_ranges = vec![];
 
         while let Some(current_char) = self.peek_char(0) {
@@ -866,25 +874,33 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        charposition::CharsWithPositionIter,
         error::Error,
-        lexer::{Comment, TokenWithRange},
+        lexer::{lex_from_str, Comment, TokenWithRange},
         location::Location,
-        peekableiter::PeekableIter,
     };
 
-    use super::{Lexer, Token};
+    use super::Token;
 
-    fn lex_str_to_vec_with_range(s: &str) -> Result<Vec<TokenWithRange>, Error> {
-        let mut chars = s.chars();
-        let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
-        let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
-        let mut lexer = Lexer::new(&mut peekable_char_position_iter);
-        lexer.lex()
+    impl Token {
+        pub fn new_identifier(s: &str) -> Self {
+            Token::Identifier(s.to_owned())
+        }
+
+        pub fn new_symbol(s: &str) -> Self {
+            Token::Symbol(s.to_owned())
+        }
+
+        pub fn new_preset_charset(s: &str) -> Self {
+            Token::PresetCharSet(s.to_owned())
+        }
+
+        pub fn new_string(s: &str) -> Self {
+            Token::String(s.to_owned())
+        }
     }
 
-    fn lex_str_to_vec(s: &str) -> Result<Vec<Token>, Error> {
-        let tokens = lex_str_to_vec_with_range(s)?
+    fn lex_from_str_without_location(s: &str) -> Result<Vec<Token>, Error> {
+        let tokens = lex_from_str(s)?
             .into_iter()
             .map(|e| e.token)
             .collect::<Vec<Token>>();
@@ -893,20 +909,20 @@ mod tests {
 
     #[test]
     fn test_lex_whitespaces() {
-        assert_eq!(lex_str_to_vec("  ").unwrap(), vec![]);
+        assert_eq!(lex_from_str_without_location("  ").unwrap(), vec![]);
 
         assert_eq!(
-            lex_str_to_vec("()").unwrap(),
+            lex_from_str_without_location("()").unwrap(),
             vec![Token::LeftParen, Token::RightParen]
         );
 
         assert_eq!(
-            lex_str_to_vec("(  )").unwrap(),
+            lex_from_str_without_location("(  )").unwrap(),
             vec![Token::LeftParen, Token::RightParen]
         );
 
         assert_eq!(
-            lex_str_to_vec("(\t\r\n\n\n)").unwrap(),
+            lex_from_str_without_location("(\t\r\n\n\n)").unwrap(),
             vec![
                 Token::LeftParen,
                 Token::NewLine,
@@ -918,10 +934,10 @@ mod tests {
 
         // location
 
-        assert_eq!(lex_str_to_vec_with_range("  ").unwrap(), vec![]);
+        assert_eq!(lex_from_str("  ").unwrap(), vec![]);
 
         assert_eq!(
-            lex_str_to_vec_with_range("()").unwrap(),
+            lex_from_str("()").unwrap(),
             vec![
                 TokenWithRange::new(Token::LeftParen, Location::new_range(0, 0, 0, 0, 1)),
                 TokenWithRange::new(Token::RightParen, Location::new_range(0, 1, 0, 1, 1)),
@@ -929,7 +945,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec_with_range("(  )").unwrap(),
+            lex_from_str("(  )").unwrap(),
             vec![
                 TokenWithRange::new(Token::LeftParen, Location::new_range(0, 0, 0, 0, 1)),
                 TokenWithRange::new(Token::RightParen, Location::new_range(0, 3, 0, 3, 1)),
@@ -944,7 +960,7 @@ mod tests {
         //  1  2   1 1 1    // length
 
         assert_eq!(
-            lex_str_to_vec_with_range("(\t\r\n\n\n)").unwrap(),
+            lex_from_str("(\t\r\n\n\n)").unwrap(),
             vec![
                 TokenWithRange::new(Token::LeftParen, Location::new_range(0, 0, 0, 0, 1)),
                 TokenWithRange::new(Token::NewLine, Location::new_range(0, 2, 0, 2, 2,)),
@@ -958,7 +974,7 @@ mod tests {
     #[test]
     fn test_lex_punctuations() {
         assert_eq!(
-            lex_str_to_vec(",!...||[]()???++?**?{}").unwrap(),
+            lex_from_str_without_location(",!...||[]()???++?**?{}").unwrap(),
             vec![
                 Token::Comma,
                 Token::Exclamation,
@@ -983,7 +999,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("???++?**?").unwrap(),
+            lex_from_str("???++?**?").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::QuestionLazy,
@@ -1022,12 +1038,12 @@ mod tests {
     #[test]
     fn test_lex_identifier() {
         assert_eq!(
-            lex_str_to_vec("name").unwrap(),
+            lex_from_str_without_location("name").unwrap(),
             vec![Token::new_identifier("name")]
         );
 
         assert_eq!(
-            lex_str_to_vec("(name)").unwrap(),
+            lex_from_str_without_location("(name)").unwrap(),
             vec![
                 Token::LeftParen,
                 Token::new_identifier("name"),
@@ -1036,7 +1052,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec("( a )").unwrap(),
+            lex_from_str_without_location("( a )").unwrap(),
             vec![
                 Token::LeftParen,
                 Token::new_identifier("a"),
@@ -1045,17 +1061,17 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec("a__b__c").unwrap(),
+            lex_from_str_without_location("a__b__c").unwrap(),
             vec![Token::new_identifier("a__b__c")]
         );
 
         assert_eq!(
-            lex_str_to_vec("foo bar").unwrap(),
+            lex_from_str_without_location("foo bar").unwrap(),
             vec![Token::new_identifier("foo"), Token::new_identifier("bar")]
         );
 
         assert_eq!(
-            lex_str_to_vec("foo.bar").unwrap(),
+            lex_from_str_without_location("foo.bar").unwrap(),
             vec![
                 Token::new_identifier("foo"),
                 Token::Dot,
@@ -1064,7 +1080,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec("αβγ 文字 🍞🥛").unwrap(),
+            lex_from_str_without_location("αβγ 文字 🍞🥛").unwrap(),
             vec![
                 Token::new_identifier("αβγ"),
                 Token::new_identifier("文字"),
@@ -1075,7 +1091,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("hello ASON").unwrap(),
+            lex_from_str("hello ASON").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::new_identifier("hello"),
@@ -1092,7 +1108,7 @@ mod tests {
 
         // err: invalid char
         assert!(matches!(
-            lex_str_to_vec("abc&xyz"),
+            lex_from_str_without_location("abc&xyz"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1109,7 +1125,7 @@ mod tests {
     #[test]
     fn test_lex_symbol() {
         assert_eq!(
-            lex_str_to_vec("start end bound not_bound").unwrap(),
+            lex_from_str_without_location("start end bound not_bound").unwrap(),
             vec![
                 Token::new_symbol("start"),
                 Token::new_symbol("end"),
@@ -1121,7 +1137,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("start end").unwrap(),
+            lex_from_str("start end").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::new_symbol("start"),
@@ -1140,7 +1156,7 @@ mod tests {
     #[test]
     fn test_lex_preset_charset() {
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 "char_space char_not_space char_word char_not_word char_digit char_not_digit"
             )
             .unwrap(),
@@ -1157,7 +1173,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("char_space char_not_digit").unwrap(),
+            lex_from_str("char_space char_not_digit").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::new_preset_charset("char_space"),
@@ -1175,24 +1191,30 @@ mod tests {
 
     #[test]
     fn test_lex_number() {
-        assert_eq!(lex_str_to_vec("223").unwrap(), vec![Token::Number(223),]);
-
-        assert_eq!(lex_str_to_vec("211").unwrap(), vec![Token::Number(211)]);
+        assert_eq!(
+            lex_from_str_without_location("223").unwrap(),
+            vec![Token::Number(223),]
+        );
 
         assert_eq!(
-            lex_str_to_vec("223_211").unwrap(),
+            lex_from_str_without_location("211").unwrap(),
+            vec![Token::Number(211)]
+        );
+
+        assert_eq!(
+            lex_from_str_without_location("223_211").unwrap(),
             vec![Token::Number(223_211)]
         );
 
         assert_eq!(
-            lex_str_to_vec("223 211").unwrap(),
+            lex_from_str_without_location("223 211").unwrap(),
             vec![Token::Number(223), Token::Number(211),]
         );
 
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("223 211").unwrap(),
+            lex_from_str("223 211").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Number(223),
@@ -1209,7 +1231,7 @@ mod tests {
 
         // err: invalid char for decimal number
         assert!(matches!(
-            lex_str_to_vec("12x34"),
+            lex_from_str_without_location("12x34"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1224,7 +1246,7 @@ mod tests {
 
         // err: integer number overflow
         assert!(matches!(
-            lex_str_to_vec("4_294_967_296"),
+            lex_from_str_without_location("4_294_967_296"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1240,58 +1262,91 @@ mod tests {
 
     #[test]
     fn test_lex_char() {
-        assert_eq!(lex_str_to_vec("'a'").unwrap(), vec![Token::Char('a')]);
+        assert_eq!(
+            lex_from_str_without_location("'a'").unwrap(),
+            vec![Token::Char('a')]
+        );
 
         assert_eq!(
-            lex_str_to_vec("('a')").unwrap(),
+            lex_from_str_without_location("('a')").unwrap(),
             vec![Token::LeftParen, Token::Char('a'), Token::RightParen]
         );
 
         assert_eq!(
-            lex_str_to_vec("'a' 'z'").unwrap(),
+            lex_from_str_without_location("'a' 'z'").unwrap(),
             vec![Token::Char('a'), Token::Char('z')]
         );
 
         // CJK
-        assert_eq!(lex_str_to_vec("'文'").unwrap(), vec![Token::Char('文')]);
+        assert_eq!(
+            lex_from_str_without_location("'文'").unwrap(),
+            vec![Token::Char('文')]
+        );
 
         // emoji
-        assert_eq!(lex_str_to_vec("'😊'").unwrap(), vec![Token::Char('😊')]);
+        assert_eq!(
+            lex_from_str_without_location("'😊'").unwrap(),
+            vec![Token::Char('😊')]
+        );
 
         // escape char `\\`
-        assert_eq!(lex_str_to_vec("'\\\\'").unwrap(), vec![Token::Char('\\')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\\\'").unwrap(),
+            vec![Token::Char('\\')]
+        );
 
         // escape char `\'`
-        assert_eq!(lex_str_to_vec("'\\\''").unwrap(), vec![Token::Char('\'')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\\''").unwrap(),
+            vec![Token::Char('\'')]
+        );
 
         // escape char `"`
-        assert_eq!(lex_str_to_vec("'\\\"'").unwrap(), vec![Token::Char('"')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\\"'").unwrap(),
+            vec![Token::Char('"')]
+        );
 
         // escape char `\t`
-        assert_eq!(lex_str_to_vec("'\\t'").unwrap(), vec![Token::Char('\t')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\t'").unwrap(),
+            vec![Token::Char('\t')]
+        );
 
         // escape char `\r`
-        assert_eq!(lex_str_to_vec("'\\r'").unwrap(), vec![Token::Char('\r')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\r'").unwrap(),
+            vec![Token::Char('\r')]
+        );
 
         // escape char `\n`
-        assert_eq!(lex_str_to_vec("'\\n'").unwrap(), vec![Token::Char('\n')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\n'").unwrap(),
+            vec![Token::Char('\n')]
+        );
 
         // escape char `\0`
-        assert_eq!(lex_str_to_vec("'\\0'").unwrap(), vec![Token::Char('\0')]);
-
-        // escape char, unicode
-        assert_eq!(lex_str_to_vec("'\\u{2d}'").unwrap(), vec![Token::Char('-')]);
+        assert_eq!(
+            lex_from_str_without_location("'\\0'").unwrap(),
+            vec![Token::Char('\0')]
+        );
 
         // escape char, unicode
         assert_eq!(
-            lex_str_to_vec("'\\u{6587}'").unwrap(),
+            lex_from_str_without_location("'\\u{2d}'").unwrap(),
+            vec![Token::Char('-')]
+        );
+
+        // escape char, unicode
+        assert_eq!(
+            lex_from_str_without_location("'\\u{6587}'").unwrap(),
             vec![Token::Char('文')]
         );
 
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("'a' '文'").unwrap(),
+            lex_from_str("'a' '文'").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Char('a'),
@@ -1307,7 +1362,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec_with_range("'\\t'").unwrap(),
+            lex_from_str("'\\t'").unwrap(),
             vec![TokenWithRange::from_position_and_length(
                 Token::Char('\t'),
                 &Location::new_position(0, 0, 0, 0),
@@ -1316,7 +1371,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec_with_range("'\\u{6587}'").unwrap(),
+            lex_from_str("'\\u{6587}'").unwrap(),
             vec![TokenWithRange::from_position_and_length(
                 Token::Char('文'),
                 &Location::new_position(0, 0, 0, 0),
@@ -1326,7 +1381,7 @@ mod tests {
 
         // err: empty char
         assert!(matches!(
-            lex_str_to_vec("''"),
+            lex_from_str_without_location("''"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1341,19 +1396,19 @@ mod tests {
 
         // err: empty char, missing the char
         assert!(matches!(
-            lex_str_to_vec("'"),
+            lex_from_str_without_location("'"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete char, missing the right quote, encounter EOF
         assert!(matches!(
-            lex_str_to_vec("'a"),
+            lex_from_str_without_location("'a"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: invalid char, expect the right quote, encounter another char
         assert!(matches!(
-            lex_str_to_vec("'ab"),
+            lex_from_str_without_location("'ab"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1368,7 +1423,7 @@ mod tests {
 
         // err: invalid char, expect the right quote, encounter another char
         assert!(matches!(
-            lex_str_to_vec("'ab'"),
+            lex_from_str_without_location("'ab'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1383,7 +1438,7 @@ mod tests {
 
         // err: unsupported escape char \v
         assert!(matches!(
-            lex_str_to_vec("'\\v'"),
+            lex_from_str_without_location("'\\v'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1398,7 +1453,7 @@ mod tests {
 
         // err: unsupported hex escape "\x.."
         assert!(matches!(
-            lex_str_to_vec("'\\x33'"),
+            lex_from_str_without_location("'\\x33'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1415,7 +1470,7 @@ mod tests {
         // "'\\u{}'"
         //  01 2345     // index
         assert!(matches!(
-            lex_str_to_vec("'\\u{}'"),
+            lex_from_str_without_location("'\\u{}'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1432,7 +1487,7 @@ mod tests {
         // "'\\u{1000111}'"
         //  01 234567890    // index
         assert!(matches!(
-            lex_str_to_vec("'\\u{1000111}'"),
+            lex_from_str_without_location("'\\u{1000111}'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1449,7 +1504,7 @@ mod tests {
         // "'\\u{123456}'"
         //  01 2345678901
         assert!(matches!(
-            lex_str_to_vec("'\\u{123456}'"),
+            lex_from_str_without_location("'\\u{123456}'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1464,7 +1519,7 @@ mod tests {
 
         // err: invalid char in the unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec("'\\u{12mn}''"),
+            lex_from_str_without_location("'\\u{12mn}''"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1479,7 +1534,7 @@ mod tests {
 
         // err: missing the closed brace for unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec("'\\u{1234'"),
+            lex_from_str_without_location("'\\u{1234'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1494,13 +1549,13 @@ mod tests {
 
         // err: incomplete unicode escape sequence, encounter EOF
         assert!(matches!(
-            lex_str_to_vec("'\\u{1234"),
+            lex_from_str_without_location("'\\u{1234"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: missing left brace for unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec("'\\u1234}'"),
+            lex_from_str_without_location("'\\u1234}'"),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1517,12 +1572,12 @@ mod tests {
     #[test]
     fn test_lex_string() {
         assert_eq!(
-            lex_str_to_vec(r#""abc""#).unwrap(),
+            lex_from_str_without_location(r#""abc""#).unwrap(),
             vec![Token::new_string("abc")]
         );
 
         assert_eq!(
-            lex_str_to_vec(r#"("abc")"#).unwrap(),
+            lex_from_str_without_location(r#"("abc")"#).unwrap(),
             vec![
                 Token::LeftParen,
                 Token::new_string("abc"),
@@ -1531,12 +1586,12 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec(r#""abc" "xyz""#).unwrap(),
+            lex_from_str_without_location(r#""abc" "xyz""#).unwrap(),
             vec![Token::new_string("abc"), Token::new_string("xyz")]
         );
 
         assert_eq!(
-            lex_str_to_vec("\"abc\"\n\n\"xyz\"").unwrap(),
+            lex_from_str_without_location("\"abc\"\n\n\"xyz\"").unwrap(),
             vec![
                 Token::new_string("abc"),
                 Token::NewLine,
@@ -1547,7 +1602,7 @@ mod tests {
 
         // unicode
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 "abc文字😊"
                 "#
@@ -1561,11 +1616,14 @@ mod tests {
         );
 
         // empty string
-        assert_eq!(lex_str_to_vec("\"\"").unwrap(), vec![Token::new_string("")]);
+        assert_eq!(
+            lex_from_str_without_location("\"\"").unwrap(),
+            vec![Token::new_string("")]
+        );
 
         // escape chars
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 "\\\'\"\t\r\n\0\u{2d}\u{6587}"
                 "#
@@ -1583,7 +1641,7 @@ mod tests {
         // 01234567 8 9 0
 
         assert_eq!(
-            lex_str_to_vec_with_range(r#""abc" "文字😊""#).unwrap(),
+            lex_from_str(r#""abc" "文字😊""#).unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::new_string("abc"),
@@ -1600,25 +1658,25 @@ mod tests {
 
         // err: incomplete string, missing the closed quote
         assert!(matches!(
-            lex_str_to_vec("\"abc"),
+            lex_from_str_without_location("\"abc"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete string, missing the closed quote, ends with \n
         assert!(matches!(
-            lex_str_to_vec("\"abc\n"),
+            lex_from_str_without_location("\"abc\n"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete string, missing the closed quote, ends with whitespaces/other chars
         assert!(matches!(
-            lex_str_to_vec("\"abc\n   "),
+            lex_from_str_without_location("\"abc\n   "),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: unsupported escape char \v
         assert!(matches!(
-            lex_str_to_vec(r#""abc\vxyz""#),
+            lex_from_str_without_location(r#""abc\vxyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1633,7 +1691,7 @@ mod tests {
 
         // err: unsupported hex escape "\x.."
         assert!(matches!(
-            lex_str_to_vec(r#""abc\x33xyz""#),
+            lex_from_str_without_location(r#""abc\x33xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1650,7 +1708,7 @@ mod tests {
         // "abc\u{}"
         // 012345678    // index
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{}xyz""#),
+            lex_from_str_without_location(r#""abc\u{}xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1667,7 +1725,7 @@ mod tests {
         // "abc\u{1000111}xyz"
         // 0123456789023456789    // index
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{1000111}xyz""#),
+            lex_from_str_without_location(r#""abc\u{1000111}xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1684,7 +1742,7 @@ mod tests {
         // "abc\u{123456}xyz"
         // 012345678901234567
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{123456}xyz""#),
+            lex_from_str_without_location(r#""abc\u{123456}xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1699,7 +1757,7 @@ mod tests {
 
         // err: invalid char in the unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{12mn}xyz""#),
+            lex_from_str_without_location(r#""abc\u{12mn}xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1714,7 +1772,7 @@ mod tests {
 
         // err: missing the right brace for unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{1234""#),
+            lex_from_str_without_location(r#""abc\u{1234""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1729,13 +1787,13 @@ mod tests {
 
         // err: incomplete unicode escape sequence, encounter EOF
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u{1234"#),
+            lex_from_str_without_location(r#""abc\u{1234"#),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: missing left brace for unicode escape sequence
         assert!(matches!(
-            lex_str_to_vec(r#""abc\u1234}xyz""#),
+            lex_from_str_without_location(r#""abc\u1234}xyz""#),
             Err(Error::MessageWithLocation(
                 _,
                 Location {
@@ -1752,7 +1810,7 @@ mod tests {
     #[test]
     fn test_lex_line_comment() {
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 7 //11
                 13 17// 19 23
@@ -1781,7 +1839,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("foo // bar").unwrap(),
+            lex_from_str("foo // bar").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Identifier("foo".to_owned()),
@@ -1797,7 +1855,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec_with_range("abc // def\n// xyz\n").unwrap(),
+            lex_from_str("abc // def\n// xyz\n").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Identifier("abc".to_owned()),
@@ -1831,7 +1889,7 @@ mod tests {
     #[test]
     fn test_lex_block_comment() {
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 7 /* 11 13 */ 17
                 "#
@@ -1848,7 +1906,7 @@ mod tests {
 
         // nested block comment
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 7 /* 11 /* 13 */ 17 */ 19
                 "#
@@ -1865,7 +1923,7 @@ mod tests {
 
         // line comment chars "//" within the block comment
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 7 /* 11 // 13 17 */ 19
                 "#
@@ -1883,7 +1941,7 @@ mod tests {
         // location
 
         assert_eq!(
-            lex_str_to_vec_with_range("foo /* hello */ bar").unwrap(),
+            lex_from_str("foo /* hello */ bar").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Identifier("foo".to_owned()),
@@ -1904,7 +1962,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec_with_range("/* abc\nxyz */ /* hello */").unwrap(),
+            lex_from_str("/* abc\nxyz */ /* hello */").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Comment(Comment::Block(" abc\nxyz ".to_owned())),
@@ -1921,25 +1979,25 @@ mod tests {
 
         // err: incomplete, missing "*/"
         assert!(matches!(
-            lex_str_to_vec("7 /* 11"),
+            lex_from_str_without_location("7 /* 11"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete, missing "*/", ends with \n
         assert!(matches!(
-            lex_str_to_vec("7 /* 11\n"),
+            lex_from_str_without_location("7 /* 11\n"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete, unpaired, missing "*/"
         assert!(matches!(
-            lex_str_to_vec("a /* b /* c */"),
+            lex_from_str_without_location("a /* b /* c */"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
 
         // err: incomplete, unpaired, missing "*/", ends with \n
         assert!(matches!(
-            lex_str_to_vec("a /* b /* c */\n"),
+            lex_from_str_without_location("a /* b /* c */\n"),
             Err(Error::UnexpectedEndOfDocument(_))
         ));
     }
@@ -1947,7 +2005,7 @@ mod tests {
     #[test]
     fn test_lex_multiple_tokens() {
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 ('a', "def", "xyz".repeat(3)).one_or_more()
                 "#
@@ -1976,7 +2034,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 'a'?
                 'b'+
@@ -2007,7 +2065,7 @@ mod tests {
         );
 
         assert_eq!(
-            lex_str_to_vec(
+            lex_from_str_without_location(
                 r#"
                 one_or_more([
                     'a'..'f'    // comment 1

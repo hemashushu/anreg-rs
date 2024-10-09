@@ -242,7 +242,7 @@ impl StateNode {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::{assert_eq, assert_str_eq};
+    use pretty_assertions::assert_str_eq;
 
     use crate::transition::{CharTransition, Transition};
 
@@ -272,7 +272,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "- idx:0, head:None, tail:None
+            "\
+- idx:0, head:None, tail:None
 > idx:1, head:None, tail:None
 - idx:2, head:None, tail:None
 < idx:3, head:None, tail:None"
@@ -296,7 +297,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(0), tail:Some(0)
+            "\
+> idx:0, head:Some(0), tail:Some(0)
   * link idx:0, prev:None, next:None
     trans idx:0, target state:1, [Char a]
 - idx:1, head:None, tail:None
@@ -319,7 +321,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(0), tail:Some(2)
+            "\
+> idx:0, head:Some(0), tail:Some(2)
   * link idx:0, prev:None, next:Some(1)
     trans idx:0, target state:1, [Char a]
   * link idx:1, prev:Some(0), next:Some(2)
@@ -340,7 +343,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(3), tail:Some(2)
+            "\
+> idx:0, head:Some(3), tail:Some(2)
   * link idx:3, prev:None, next:Some(0)
     trans idx:3, target state:4, [Char d]
   * link idx:0, prev:Some(3), next:Some(1)
@@ -373,7 +377,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(0), tail:Some(0)
+            "\
+> idx:0, head:Some(0), tail:Some(0)
   * link idx:0, prev:None, next:None
     trans idx:0, target state:1, [Char a]
 - idx:1, head:None, tail:None
@@ -396,7 +401,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(2), tail:Some(0)
+            "\
+> idx:0, head:Some(2), tail:Some(0)
   * link idx:2, prev:None, next:Some(1)
     trans idx:2, target state:3, [Char c]
   * link idx:1, prev:Some(2), next:Some(0)
@@ -417,7 +423,8 @@ mod tests {
 
         assert_str_eq!(
             state_set.get_states_and_transitions_text(),
-            "> idx:0, head:Some(2), tail:Some(3)
+            "\
+> idx:0, head:Some(2), tail:Some(3)
   * link idx:2, prev:None, next:Some(1)
     trans idx:2, target state:3, [Char c]
   * link idx:1, prev:Some(2), next:Some(0)

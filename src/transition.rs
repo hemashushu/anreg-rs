@@ -6,8 +6,10 @@
 
 use std::fmt::Display;
 
-trait ITransition {
-    fn validated(&self, source: &[char], position: usize, length: usize) -> bool;
+use crate::context::Context;
+
+trait TransitionTrait {
+    fn validated(&self, context: &Context) -> bool;
 
     // Move position
     fn forward(&self) -> usize;
@@ -51,8 +53,8 @@ impl CharTransition {
     }
 }
 
-impl ITransition for JumpTransition {
-    fn validated(&self, _source: &[char], _position: usize, _length: usize) -> bool {
+impl TransitionTrait for JumpTransition {
+    fn validated(&self, _context: &Context) -> bool {
         true
     }
 
@@ -61,9 +63,10 @@ impl ITransition for JumpTransition {
     }
 }
 
-impl ITransition for CharTransition {
-    fn validated(&self, source: &[char], position: usize, _length: usize) -> bool {
-        (self.character == source[position]) ^ self.inverse
+impl TransitionTrait for CharTransition {
+    fn validated(&self, context: &Context) -> bool {
+        let position = context.get_last_position();
+        (self.character == context.text[position]) ^ self.inverse
     }
 
     fn forward(&self) -> usize {

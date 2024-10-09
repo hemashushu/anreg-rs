@@ -125,30 +125,24 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        charposition::CharsWithPositionIter,
         commentcleaner::clean,
         error::Error,
-        lexer::Lexer,
+        lexer::lex_from_str,
         location::Location,
-        peekableiter::PeekableIter,
         token::{Token, TokenWithRange},
     };
 
     use super::normalize;
 
-    fn lex_str_to_vec_with_range(s: &str) -> Result<Vec<TokenWithRange>, Error> {
-        let mut chars = s.chars();
-        let mut char_position_iter = CharsWithPositionIter::new(0, &mut chars);
-        let mut peekable_char_position_iter = PeekableIter::new(&mut char_position_iter, 3);
-        let mut lexer = Lexer::new(&mut peekable_char_position_iter);
-        let tokens = lexer.lex()?;
+    fn clean_and_normalize_lex_from_str(s: &str) -> Result<Vec<TokenWithRange>, Error> {
+        let tokens = lex_from_str(s)?;
         let clean_tokens = clean(tokens);
         let normalized_tokens = normalize(clean_tokens);
         Ok(normalized_tokens)
     }
 
-    fn lex_str_to_vec(s: &str) -> Result<Vec<Token>, Error> {
-        let tokens = lex_str_to_vec_with_range(s)?
+    fn clean_and_normalize_lex_from_str_without_location(s: &str) -> Result<Vec<Token>, Error> {
+        let tokens = clean_and_normalize_lex_from_str(s)?
             .into_iter()
             .map(|e| e.token)
             .collect::<Vec<Token>>();
@@ -174,7 +168,7 @@ mod tests {
             //
             // normalization:
             // - blanks => blank
-            lex_str_to_vec(
+            clean_and_normalize_lex_from_str_without_location(
                 r#"
                     ('1','2',
 
@@ -226,7 +220,7 @@ mod tests {
 
         // blanks -> blank
         assert_eq!(
-            lex_str_to_vec_with_range("'1'\n \n  \n'2'").unwrap(),
+            clean_and_normalize_lex_from_str("'1'\n \n  \n'2'").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Char('1'),
@@ -248,7 +242,7 @@ mod tests {
 
         // comma + blanks -> comma
         assert_eq!(
-            lex_str_to_vec_with_range(",\n\n\n'1'").unwrap(),
+            clean_and_normalize_lex_from_str(",\n\n\n'1'").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Comma,
@@ -265,7 +259,7 @@ mod tests {
 
         // blanks + comma -> comma
         assert_eq!(
-            lex_str_to_vec_with_range("'1'\n\n\n,").unwrap(),
+            clean_and_normalize_lex_from_str("'1'\n\n\n,").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Char('1'),
@@ -282,7 +276,7 @@ mod tests {
 
         // blanks + comma + blanks -> comma
         assert_eq!(
-            lex_str_to_vec_with_range("'1'\n\n,\n\n'2'").unwrap(),
+            clean_and_normalize_lex_from_str("'1'\n\n,\n\n'2'").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Char('1'),
@@ -304,7 +298,7 @@ mod tests {
 
         // comma + comment + comma -> comma + comma
         assert_eq!(
-            lex_str_to_vec_with_range(",//abc\n,").unwrap(),
+            clean_and_normalize_lex_from_str(",//abc\n,").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Comma,
@@ -321,7 +315,7 @@ mod tests {
 
         // blanks + comment + blanks -> blank
         assert_eq!(
-            lex_str_to_vec_with_range("'1'\n\n//abc\n\n'2'").unwrap(),
+            clean_and_normalize_lex_from_str("'1'\n\n//abc\n\n'2'").unwrap(),
             vec![
                 TokenWithRange::from_position_and_length(
                     Token::Char('1'),
@@ -345,7 +339,7 @@ mod tests {
     #[test]
     fn test_normalize_trim() {
         assert_eq!(
-            lex_str_to_vec(
+            clean_and_normalize_lex_from_str_without_location(
                 r#"
 
                 '1'

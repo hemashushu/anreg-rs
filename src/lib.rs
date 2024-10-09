@@ -20,3 +20,5 @@ mod peekableiter;
 mod state;
 mod token;
 mod transition;
+
+pub use compiler::compile_from_str;
