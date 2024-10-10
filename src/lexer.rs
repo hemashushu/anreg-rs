@@ -389,7 +389,7 @@ impl<'a> Lexer<'a> {
         );
 
         let token = match name_string.as_str() {
-            "start" | "end" | "bound" | "not_bound" => Token::Symbol(name_string),
+            "start" | "end" | "bound" | "not_bound" => Token::Status(name_string),
             "char_space" | "char_not_space" | "char_word" | "char_not_word" | "char_digit"
             | "char_not_digit" => Token::PresetCharSet(name_string),
             _ => Token::Identifier(name_string),
@@ -887,7 +887,7 @@ mod tests {
         }
 
         pub fn new_symbol(s: &str) -> Self {
-            Token::Symbol(s.to_owned())
+            Token::Status(s.to_owned())
         }
 
         pub fn new_preset_charset(s: &str) -> Self {

@@ -193,30 +193,6 @@ impl<'a> Parser<'a> {
         Ok(program)
     }
 
-    //     fn parse_definition_statement(&mut self) -> Result<Definition, Error> {
-    //         // "define" "(" identifier "," expression ")" ?
-    //         // --------                                -
-    //         // ^                                       ^-- to here
-    //         // | current, validated
-    //
-    //         self.next_token(); // consume "define"
-    //         self.expect_token(&Token::LeftParen)?; // consume '('
-    //         self.consume_new_line_if_exist(); // consume trailing new-line
-    //
-    //         let identifier = self.expect_identifier()?;
-    //         self.expect_new_line_or_comma()?; // consume arg separator
-    //
-    //         let expression = self.parse_expression()?;
-    //         self.consume_new_line_if_exist(); // consume trailing new-line
-    //
-    //         self.expect_token(&Token::RightParen)?; // consume ')'
-    //
-    //         Ok(Definition {
-    //             expression: Box::new(expression),
-    //             identifier,
-    //         })
-    //     }
-
     fn parse_expression(&mut self) -> Result<Expression, Error> {
         // token ...
         // -----
@@ -228,11 +204,13 @@ impl<'a> Parser<'a> {
         // 2. unary expressions
         // 3. base expression
 
-        self.parse_alternation()
+        self.parse_logic_or()
     }
 
-    // binary expression
-    fn parse_alternation(&mut self) -> Result<Expression, Error> {
+    // binary expression (login or, etc.)   | precedence low
+    // |-- unary expression
+    // |   |-- simple expression            | precedence high
+    fn parse_logic_or(&mut self) -> Result<Expression, Error> {
         // token ... [ "||" expression ]
         // -----
         // ^
@@ -244,21 +222,36 @@ impl<'a> Parser<'a> {
             self.next_token(); // consume "||"
             self.consume_new_line_if_exist(); // consume trailing new-line
 
+            // Operator associativity
+            // - https://en.wikipedia.org/wiki/Operator_associativity
+            // - https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence
+            //
+            // left-associative, left-to-right associative
+            // a || b || c -> (a || b) || c
+            //
+            // right-associative, righ-to-left associative
+            // a || b || c -> a || (b || c)
+            //
             // note:
-            // using `parse_expression` for right-to-left precedence, e.g.
+            // using `parse_expression` for right-to-left associative, e.g.
             // `let right = self.parse_expression()?;`
-            // and using `parse_notation_and_rear_call` for
-            // left-to-right precedence.
+            // or
+            // using `parse_simple_expression` for left-to-right associative, e.g.
+            // `let right = self.parse_simple_expression()?;`
+            //
+            // for the current interpreter, it is more efficient by using right-associative.
 
-            let right = self.parse_simple_expression()?;
-            let expression = Expression::Alternation(Box::new(left), Box::new(right));
+            let right = self.parse_expression()?;
+            let expression = Expression::Or(Box::new(left), Box::new(right));
             left = expression;
         }
 
         Ok(left)
     }
 
-    // post unary expression
+    // binary expression (login or, etc.)
+    // |-- unary expression
+    // |   |-- simple expression
     fn parse_simple_expression(&mut self) -> Result<Expression, Error> {
         // token ...
         // -----
@@ -652,7 +645,7 @@ impl<'a> Parser<'a> {
         //   - string
         //   - charset
         //   - preset_charset
-        //   - symbol
+        //   - status
 
         match self.peek_token(0) {
             Some(token) => {
@@ -689,10 +682,10 @@ impl<'a> Parser<'a> {
                         self.next_token(); // consume preset charset
                         Literal::PresetCharSet(preset_charset)
                     }
-                    Token::Symbol(symbol_ref) => {
-                        let symbol = symbol_ref.to_owned();
-                        self.next_token(); // consume symbol
-                        Literal::Symbol(symbol)
+                    Token::Status(status_ref) => {
+                        let status = status_ref.to_owned();
+                        self.next_token(); // consume status
+                        Literal::Status(status)
                     }
                     _ => {
                         return Err(Error::MessageWithLocation(
@@ -711,7 +704,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_charset(&mut self) -> Result<Vec<CharSetElement>, Error> {
-        // "[" {char | char_range | preset_charset | symbol} "]" ?
+        // "[" {char | char_range | preset_charset | status} "]" ?
         // ---                                                   -
         // ^                                                     ^__ to here
         // | current, validated
@@ -747,11 +740,12 @@ impl<'a> Parser<'a> {
                     self.next_token(); // consume preset charset
                     elements.push(CharSetElement::PresetCharSet(preset_charset));
                 }
-                Token::Symbol(symbol_ref) => {
-                    // symbol, such as "start", "end", "bound"
-                    let symbol = symbol_ref.to_owned();
-                    self.next_token(); // consume symbol
-                    elements.push(CharSetElement::Symbol(symbol));
+                Token::Status(status_ref) => {
+                    // status
+                    // such as "first", "last", "bound"
+                    let status = status_ref.to_owned();
+                    self.next_token(); // consume status
+                    elements.push(CharSetElement::Status(status));
                 }
                 _ => {
                     return Err(Error::MessageWithLocation(
@@ -824,8 +818,10 @@ fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionNa
         "is_not_before" => FunctionName::IsNotBefore, // negative lookahead
         "is_not_after" => FunctionName::IsNotAfter, // negative lookbehind
 
-        // Others
+        // Capture
         "name" => FunctionName::Name,
+        "capture" => FunctionName::Capture,
+
         // Unexpect
         _ => {
             return Err(Error::MessageWithLocation(
@@ -900,7 +896,7 @@ start, 'a', "foo", char_word
             Program {
                 // definitions: vec![],
                 expressions: vec![
-                    Expression::Literal(Literal::Symbol("start".to_owned())),
+                    Expression::Literal(Literal::Status("start".to_owned())),
                     Expression::Literal(Literal::Char('a')),
                     Expression::Literal(Literal::String("foo".to_owned())),
                     Expression::Literal(Literal::PresetCharSet("char_word".to_owned())),
@@ -933,7 +929,7 @@ start, 'a', "foo", char_word
                             end_included: '9'
                         }),
                         CharSetElement::PresetCharSet("char_word".to_owned()),
-                        CharSetElement::Symbol("end".to_owned())
+                        CharSetElement::Status("end".to_owned())
                     ]
                 })),]
             }
@@ -1118,29 +1114,53 @@ at_least_lazy('z', 11)"#
     }
 
     #[test]
-    fn test_parse_expression_alternation() {
-        let program = parse_from_str(
-            r#"
-'a' || 'b' || 'c'
+    fn test_parse_expression_logic_or() {
+        {
+            let program = parse_from_str(
+                r#"
+'a' || 'b'
 "#,
-        )
-        .unwrap();
+            )
+            .unwrap();
 
-        assert_eq!(
-            program,
-            Program {
-                // definitions: vec![],
-                expressions: vec![Expression::Alternation(
-                    Box::new(Expression::Alternation(
+            assert_eq!(
+                program,
+                Program {
+                    // definitions: vec![],
+                    expressions: vec![Expression::Or(
                         Box::new(Expression::Literal(Literal::Char('a'))),
                         Box::new(Expression::Literal(Literal::Char('b'))),
-                    )),
-                    Box::new(Expression::Literal(Literal::Char('c')))
-                )]
-            }
-        );
+                    )]
+                }
+            );
 
-        assert_eq!(program.to_string(), r#"'a' || 'b' || 'c'"#);
+            assert_eq!(program.to_string(), r#"'a' || 'b'"#);
+        }
+
+        {
+            let program = parse_from_str(
+                r#"
+'a' || 'b' || 'c'
+"#,
+            )
+            .unwrap();
+
+            assert_eq!(
+                program,
+                Program {
+                    // definitions: vec![],
+                    expressions: vec![Expression::Or(
+                        Box::new(Expression::Literal(Literal::Char('a'))),
+                        Box::new(Expression::Or(
+                            Box::new(Expression::Literal(Literal::Char('b'))),
+                            Box::new(Expression::Literal(Literal::Char('c'))),
+                        )),
+                    )]
+                }
+            );
+
+            assert_eq!(program.to_string(), r#"'a' || 'b' || 'c'"#);
+        }
 
         assert_eq!(
             parse_from_str(
@@ -1269,6 +1289,7 @@ one_or_more(['0'..'9', 'a'..'f'])"
  * https://en.wikipedia.org/wiki/Email_address
  */
 
+// Asserts that the current is the first character
 start
 
 // User name
@@ -1289,6 +1310,7 @@ start
 // Top-level domain
 ['a'..'z'].at_least(2)
 
+// Asserts that the current is the last character
 end
 "#,
             )

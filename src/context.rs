@@ -5,11 +5,12 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 pub struct Context {
-    pub text: Vec<char>,   // the source text
-    pub length: usize,     // the length of source text
-    pub fixed_start: bool, // it is true when the expression starts with `^`
-    pub fixed_end: bool,   // it is true when the expression ends with `$`
+    pub text: Vec<char>,      // the source text
+    pub length: usize,        // the length of source text
+    pub fixed_start: bool,    // it is true when the expression starts with `^`
+    pub fixed_end: bool,      // it is true when the expression ends with `$`
     pub cursors: Vec<Cursor>, // the `Cursor` stack.
+    pub position: usize,      // it is sync to the position of the last cursor
 }
 
 // The `Cursor` can only be moved to left as a whole,
@@ -79,8 +80,58 @@ pub struct Cursor {
 //               ^__ position (move to right only)
 
 impl Context {
-    pub fn get_last_position(&self) -> usize {
-        let count = self.cursors.len();
-        self.cursors[count-1].position
+    #[inline]
+    pub fn get_current_char(&self) -> char {
+        self.get_char(self.position)
     }
+
+    #[inline]
+    pub fn is_first_char(&self) -> bool {
+        self.position == 0
+    }
+
+    #[inline]
+    pub fn is_last_char(&self) -> bool {
+        self.position == (self.length - 1)
+    }
+
+    pub fn is_word_bound(&self) -> bool {
+        let current_char = self.get_current_char();
+
+        if is_word_char(current_char) {
+            !is_word_char(self.get_previous_char()) || !is_word_char(self.get_next_char())
+        } else {
+            is_word_char(self.get_previous_char()) || is_word_char(self.get_next_char())
+        }
+    }
+
+    #[inline]
+    pub fn get_char(&self, position: usize) -> char {
+        self.text[position]
+    }
+
+    #[inline]
+    fn get_previous_char(&self) -> char {
+        if self.is_first_char() {
+            '\0'
+        } else {
+            self.get_char(self.position - 1)
+        }
+    }
+
+    #[inline]
+    fn get_next_char(&self) -> char {
+        if self.is_last_char() {
+            '\0'
+        } else {
+            self.get_char(self.position + 1)
+        }
+    }
+}
+
+fn is_word_char(c: char) -> bool {
+    ('a'..='z').any(|e| e == c)
+        || ('A'..='Z').any(|e| e == c)
+        || ('0'..='9').any(|e| e == c)
+        || c == '_'
 }

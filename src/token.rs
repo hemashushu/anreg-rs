@@ -38,7 +38,7 @@ pub enum Token {
 
     // [a-zA-Z0-9_] and '\u{a0}' - '\u{d7ff}' and '\u{e000}' - '\u{10ffff}'
     Identifier(String),
-    Symbol(String),
+    Status(String),
     PresetCharSet(String),
     Number(u32),
     Char(char),
@@ -99,7 +99,7 @@ impl Token {
             Token::Dot => "dot \".\"".to_owned(),
             Token::LogicOr => "logic or \"||\"".to_owned(),
             Token::Identifier(id) => format!("identifier \"{}\"", id),
-            Token::Symbol(k) => format!("symbol \"{}\"", k),
+            Token::Status(k) => format!("status \"{}\"", k),
             Token::PresetCharSet(s) => format!("preset charset \"{}\"", s),
             Token::Number(n) => format!("number \"{}\"", n),
             Token::Char(c) => format!("char \"{}\"", c),

@@ -36,6 +36,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile(&mut self) -> Result<(), Error> {
+        // todo: add index group
         let result = self.emit_group(&self.program.expressions)?;
         self.state_set.start_node_index = result.in_state_index;
         self.state_set.end_node_index = result.out_state_index;
@@ -48,26 +49,20 @@ impl<'a> Compiler<'a> {
             Expression::Identifier(_) => todo!(),
             Expression::Group(expressions) => self.emit_group(expressions)?,
             Expression::FunctionCall(_) => todo!(),
-            Expression::Alternation(_, _) => todo!(),
+            Expression::Or(left, right) => self.emit_logic_or(left, right)?,
         };
 
         Ok(result)
     }
 
     fn emit_group(&mut self, expressions: &[Expression]) -> Result<EmitResult, Error> {
-        // the _group_ of ANREG is different from the _group_ of
-        // oridinary regular expressions.
-        // ANREG's group is just a series of patterns, which will not
-        // be captured unless enclosed by the function 'name' or 'index'
-
-        // connecting two groups of states
+        // connecting two groups of states by adding a 'jump transition'
         //
-        //     current                   next
-        //  /-----------\            /-----------\
-        // --o in  out o-- ==jump== --o in  out o--
-        //  \-----------/      ^     \-----------/
-        //                     |
-        //                     \-- jump transition
+        //     current                      next
+        //  /-----------\               /-----------\
+        // --o in  out o-- ==jump trans== --o in  out o--
+        //  \-----------/               \-----------/
+        //
 
         let mut results = vec![];
         for expression in expressions {
@@ -75,6 +70,7 @@ impl<'a> Compiler<'a> {
         }
 
         if results.len() == 1 {
+            // eliminates the nested group, e.g. '(((...)))'
             let result = results.pop().unwrap();
             Ok(result)
         } else {
@@ -98,11 +94,57 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn emit_logic_or(
+        &mut self,
+        left: &Expression,
+        right: &Expression,
+    ) -> Result<EmitResult, Error> {
+        //                    left
+        //                /-----------\
+        //      /==jump==--o in  out o--==jump==\
+        //  in  |         \-----------/         |  out
+        // --o==|                               |==o--
+        //      |             right             |
+        //      |         /-----------\         |
+        //      \==jump==--o in  out o--==jump==/
+        //                \-----------/
+
+        let left_result = self.emit_expression(left)?;
+        let right_result = self.emit_expression(right)?;
+
+        let in_state_index = self.state_set.new_state();
+        let out_state_index = self.state_set.new_state();
+
+        self.state_set.append_transition(
+            in_state_index,
+            left_result.in_state_index,
+            Transition::Jump(JumpTransition),
+        );
+        self.state_set.append_transition(
+            in_state_index,
+            right_result.in_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        self.state_set.append_transition(
+            left_result.out_state_index,
+            out_state_index,
+            Transition::Jump(JumpTransition),
+        );
+        self.state_set.append_transition(
+            right_result.out_state_index,
+            out_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        Ok(EmitResult::new(in_state_index, out_state_index))
+    }
+
     fn emit_literal(&mut self, literal: &Literal) -> Result<EmitResult, Error> {
         let result = match literal {
             Literal::Char(character) => self.emit_literal_char(*character, false)?,
             Literal::String(_) => todo!(),
-            Literal::Symbol(_) => todo!(),
+            Literal::Status(_) => todo!(),
             Literal::CharSet(_) => todo!(),
             Literal::PresetCharSet(_) => todo!(),
         };
@@ -113,7 +155,7 @@ impl<'a> Compiler<'a> {
     fn emit_literal_char(&mut self, character: char, inverse: bool) -> Result<EmitResult, Error> {
         let in_state_index = self.state_set.new_state();
         let out_state_index = self.state_set.new_state();
-        let transition = Transition::Char(CharTransition::new(character, inverse));
+        let transition = Transition::Char(CharTransition::new(character /*, inverse */));
         self.state_set
             .append_transition(in_state_index, out_state_index, transition);
         Ok(EmitResult::new(in_state_index, out_state_index))
@@ -144,43 +186,196 @@ mod tests {
     fn test_compile_char() {
         {
             let state_set = compile_from_str(r#"'a'"#).unwrap();
-            let s = state_set.get_states_and_transitions_text();
+            let s = state_set.generate_states_and_transitions_text();
 
             assert_str_eq!(
                 s,
                 "\
-> idx:0, head:Some(0), tail:Some(0)
-  * link idx:0, prev:None, next:None
-    trans idx:0, target state:1, [Char a]
-< idx:1, head:None, tail:None"
+> 0
+  -> 1, Char 'a'
+< 1"
             );
         }
 
         {
             let state_set = compile_from_str(r#"'a', 'b', 'c'"#).unwrap();
-            let s = state_set.get_states_and_transitions_text();
+            let s = state_set.generate_states_and_transitions_text();
 
-            // println!("{}", s);
             assert_str_eq!(
                 s,
                 "\
-> idx:0, head:Some(0), tail:Some(0)
-  * link idx:0, prev:None, next:None
-    trans idx:0, target state:1, [Char a]
-- idx:1, head:Some(3), tail:Some(3)
-  * link idx:3, prev:None, next:None
-    trans idx:3, target state:2, [Epsilon]
-- idx:2, head:Some(1), tail:Some(1)
-  * link idx:1, prev:None, next:None
-    trans idx:1, target state:3, [Char b]
-- idx:3, head:Some(4), tail:Some(4)
-  * link idx:4, prev:None, next:None
-    trans idx:4, target state:4, [Epsilon]
-- idx:4, head:Some(2), tail:Some(2)
-  * link idx:2, prev:None, next:None
-    trans idx:2, target state:5, [Char c]
-< idx:5, head:None, tail:None"
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 4, Jump
+- 4
+  -> 5, Char 'c'
+< 5"
             );
         }
+
+        {
+            let state_set = compile_from_str(r#"'a',('b','c'), 'd'"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 4, Jump
+- 4
+  -> 5, Char 'c'
+- 5
+  -> 6, Jump
+- 6
+  -> 7, Char 'd'
+< 7"
+            );
+        }
+
+        {
+            let state_set = compile_from_str(r#"'a',('b', ('c', 'd'), 'e'), 'f'"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 4, Jump
+- 4
+  -> 5, Char 'c'
+- 5
+  -> 6, Jump
+- 6
+  -> 7, Char 'd'
+- 7
+  -> 8, Jump
+- 8
+  -> 9, Char 'e'
+- 9
+  -> 10, Jump
+- 10
+  -> 11, Char 'f'
+< 11"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_logic_or() {
+        {
+            let state_set = compile_from_str(r#"'a' || 'b'"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 5, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 5, Jump
+> 4
+  -> 0, Jump
+  -> 2, Jump
+< 5"
+            );
+        }
+
+        {
+            // "'a', 'b' || 'c', 'd'" == "'a', ('b' || 'c'), 'd'"
+            let state_set = compile_from_str(r#"'a', 'b' || 'c', 'd'"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 6, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 7, Jump
+- 4
+  -> 5, Char 'c'
+- 5
+  -> 7, Jump
+- 6
+  -> 2, Jump
+  -> 4, Jump
+- 7
+  -> 8, Jump
+- 8
+  -> 9, Char 'd'
+< 9"
+            );
+        }
+
+        {
+            // "'a', 'b' || 'c', 'd'" == "'a', ('b' || 'c'), 'd'"
+            assert_str_eq!(
+                compile_from_str(r#"'a', 'b' || 'c', 'd'"#)
+                    .unwrap()
+                    .generate_states_and_transitions_text(),
+                compile_from_str(r#"'a', ('b' || 'c'), 'd'"#)
+                    .unwrap()
+                    .generate_states_and_transitions_text()
+            );
+        }
+
+        // associativity
+
+        {
+            let state_set = compile_from_str(r#"'a' || 'b' || 'c'"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 9, Jump
+- 2
+  -> 3, Char 'b'
+- 3
+  -> 7, Jump
+- 4
+  -> 5, Char 'c'
+- 5
+  -> 7, Jump
+- 6
+  -> 2, Jump
+  -> 4, Jump
+- 7
+  -> 9, Jump
+> 8
+  -> 0, Jump
+  -> 6, Jump
+< 9"
+            );
+        }
+
     }
 }

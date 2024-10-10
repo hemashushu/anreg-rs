@@ -172,19 +172,20 @@ impl StateSet {
     }
 
     // for debug
-    pub fn get_transition_index_list(&self, source_state_index: usize) -> Vec<usize> {
-        let mut indices = vec![];
-        let mut next_index = self.states[source_state_index].link_head_index;
+    //     pub fn get_transition_index_list(&self, source_state_index: usize) -> Vec<usize> {
+    //         let mut indices = vec![];
+    //         let mut next_index = self.states[source_state_index].link_head_index;
+    //
+    //         while let Some(idx) = next_index {
+    //             indices.push(idx);
+    //             next_index = self.links[idx].next_index;
+    //         }
+    //
+    //         indices
+    //     }
 
-        while let Some(idx) = next_index {
-            indices.push(idx);
-            next_index = self.links[idx].next_index;
-        }
-
-        indices
-    }
-
-    pub fn get_states_and_transitions_text(&self) -> String {
+    // for debug
+    pub fn generate_states_linklist_and_transitions_text(&self) -> String {
         let mut lines = vec![];
         for (state_index, state_node) in self.states.iter().enumerate() {
             let prefix = if state_index == self.start_node_index {
@@ -196,7 +197,7 @@ impl StateSet {
             };
 
             let state_line = format!(
-                "{} idx:{}, head:{:?}, tail:{:?}",
+                "{} state <idx:{}>, head:{:?}, tail:{:?}",
                 prefix, state_index, state_node.link_head_index, state_node.link_tail_index
             );
             lines.push(state_line);
@@ -205,20 +206,55 @@ impl StateSet {
             while let Some(link_node_index) = next_link_node_index {
                 let link_node = &self.links[link_node_index];
                 let link_line = format!(
-                    "  * link idx:{}, prev:{:?}, next:{:?}",
+                    "  * link ({}), prev:{:?}, next:{:?}",
                     link_node_index, link_node.previous_index, link_node.next_index
                 );
 
                 let transition_node_index = link_node.transition_index;
                 let transition_node = &self.transitions[transition_node_index];
                 let transition_line = format!(
-                    "    trans idx:{}, target state:{}, [{}]",
+                    "    trans '{}', target state <idx:{}>, {}",
                     transition_node_index,
                     transition_node.target_state_index,
                     transition_node.transition
                 );
 
                 lines.push(link_line);
+                lines.push(transition_line);
+
+                // update next
+                next_link_node_index = link_node.next_index;
+            }
+        }
+
+        lines.join("\n")
+    }
+
+    // for debug
+    pub fn generate_states_and_transitions_text(&self) -> String {
+        let mut lines = vec![];
+        for (state_index, state_node) in self.states.iter().enumerate() {
+            let prefix = if state_index == self.start_node_index {
+                '>'
+            } else if state_index == self.end_node_index {
+                '<'
+            } else {
+                '-'
+            };
+
+            let state_line = format!("{} {}", prefix, state_index);
+            lines.push(state_line);
+
+            let mut next_link_node_index = state_node.link_head_index;
+            while let Some(link_node_index) = next_link_node_index {
+                let link_node = &self.links[link_node_index];
+                let transition_node_index = link_node.transition_index;
+                let transition_node = &self.transitions[transition_node_index];
+                let transition_line = format!(
+                    "  -> {}, {}",
+                    transition_node.target_state_index, transition_node.transition
+                );
+
                 lines.push(transition_line);
 
                 // update next
@@ -258,8 +294,9 @@ mod tests {
 
         assert!(!state_set.is_empty());
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
-            "> idx:0, head:None, tail:None"
+            state_set.generate_states_linklist_and_transitions_text(),
+            "\
+> state <idx:0>, head:None, tail:None"
         );
 
         // create other states
@@ -271,12 +308,12 @@ mod tests {
         state_set.end_node_index = idx2;
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-- idx:0, head:None, tail:None
-> idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-< idx:3, head:None, tail:None"
+- state <idx:0>, head:None, tail:None
+> state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+< state <idx:3>, head:None, tail:None"
         );
     }
 
@@ -292,71 +329,71 @@ mod tests {
         state_set.append_transition(
             state_idx0,
             state_idx1,
-            Transition::Char(CharTransition::new('a', false)),
+            Transition::Char(CharTransition::new('a')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(0), tail:Some(0)
-  * link idx:0, prev:None, next:None
-    trans idx:0, target state:1, [Char a]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(0), tail:Some(0)
+  * link (0), prev:None, next:None
+    trans '0', target state <idx:1>, Char 'a'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
 
         state_set.append_transition(
             state_idx0,
             state_idx2,
-            Transition::Char(CharTransition::new('b', false)),
+            Transition::Char(CharTransition::new('b')),
         );
 
         state_set.append_transition(
             state_idx0,
             state_idx3,
-            Transition::Char(CharTransition::new('c', false)),
+            Transition::Char(CharTransition::new('c')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(0), tail:Some(2)
-  * link idx:0, prev:None, next:Some(1)
-    trans idx:0, target state:1, [Char a]
-  * link idx:1, prev:Some(0), next:Some(2)
-    trans idx:1, target state:2, [Char b]
-  * link idx:2, prev:Some(1), next:None
-    trans idx:2, target state:3, [Char c]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(0), tail:Some(2)
+  * link (0), prev:None, next:Some(1)
+    trans '0', target state <idx:1>, Char 'a'
+  * link (1), prev:Some(0), next:Some(2)
+    trans '1', target state <idx:2>, Char 'b'
+  * link (2), prev:Some(1), next:None
+    trans '2', target state <idx:3>, Char 'c'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
 
         state_set.insert_transition(
             state_idx0,
             state_idx4,
-            Transition::Char(CharTransition::new('d', false)),
+            Transition::Char(CharTransition::new('d')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(3), tail:Some(2)
-  * link idx:3, prev:None, next:Some(0)
-    trans idx:3, target state:4, [Char d]
-  * link idx:0, prev:Some(3), next:Some(1)
-    trans idx:0, target state:1, [Char a]
-  * link idx:1, prev:Some(0), next:Some(2)
-    trans idx:1, target state:2, [Char b]
-  * link idx:2, prev:Some(1), next:None
-    trans idx:2, target state:3, [Char c]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(3), tail:Some(2)
+  * link (3), prev:None, next:Some(0)
+    trans '3', target state <idx:4>, Char 'd'
+  * link (0), prev:Some(3), next:Some(1)
+    trans '0', target state <idx:1>, Char 'a'
+  * link (1), prev:Some(0), next:Some(2)
+    trans '1', target state <idx:2>, Char 'b'
+  * link (2), prev:Some(1), next:None
+    trans '2', target state <idx:3>, Char 'c'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
     }
 
@@ -372,71 +409,71 @@ mod tests {
         state_set.insert_transition(
             state_idx0,
             state_idx1,
-            Transition::Char(CharTransition::new('a', false)),
+            Transition::Char(CharTransition::new('a')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(0), tail:Some(0)
-  * link idx:0, prev:None, next:None
-    trans idx:0, target state:1, [Char a]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(0), tail:Some(0)
+  * link (0), prev:None, next:None
+    trans '0', target state <idx:1>, Char 'a'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
 
         state_set.insert_transition(
             state_idx0,
             state_idx2,
-            Transition::Char(CharTransition::new('b', false)),
+            Transition::Char(CharTransition::new('b')),
         );
 
         state_set.insert_transition(
             state_idx0,
             state_idx3,
-            Transition::Char(CharTransition::new('c', false)),
+            Transition::Char(CharTransition::new('c')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(2), tail:Some(0)
-  * link idx:2, prev:None, next:Some(1)
-    trans idx:2, target state:3, [Char c]
-  * link idx:1, prev:Some(2), next:Some(0)
-    trans idx:1, target state:2, [Char b]
-  * link idx:0, prev:Some(1), next:None
-    trans idx:0, target state:1, [Char a]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(2), tail:Some(0)
+  * link (2), prev:None, next:Some(1)
+    trans '2', target state <idx:3>, Char 'c'
+  * link (1), prev:Some(2), next:Some(0)
+    trans '1', target state <idx:2>, Char 'b'
+  * link (0), prev:Some(1), next:None
+    trans '0', target state <idx:1>, Char 'a'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
 
         state_set.append_transition(
             state_idx0,
             state_idx4,
-            Transition::Char(CharTransition::new('d', false)),
+            Transition::Char(CharTransition::new('d')),
         );
 
         assert_str_eq!(
-            state_set.get_states_and_transitions_text(),
+            state_set.generate_states_linklist_and_transitions_text(),
             "\
-> idx:0, head:Some(2), tail:Some(3)
-  * link idx:2, prev:None, next:Some(1)
-    trans idx:2, target state:3, [Char c]
-  * link idx:1, prev:Some(2), next:Some(0)
-    trans idx:1, target state:2, [Char b]
-  * link idx:0, prev:Some(1), next:Some(3)
-    trans idx:0, target state:1, [Char a]
-  * link idx:3, prev:Some(0), next:None
-    trans idx:3, target state:4, [Char d]
-- idx:1, head:None, tail:None
-- idx:2, head:None, tail:None
-- idx:3, head:None, tail:None
-- idx:4, head:None, tail:None"
+> state <idx:0>, head:Some(2), tail:Some(3)
+  * link (2), prev:None, next:Some(1)
+    trans '2', target state <idx:3>, Char 'c'
+  * link (1), prev:Some(2), next:Some(0)
+    trans '1', target state <idx:2>, Char 'b'
+  * link (0), prev:Some(1), next:Some(3)
+    trans '0', target state <idx:1>, Char 'a'
+  * link (3), prev:Some(0), next:None
+    trans '3', target state <idx:4>, Char 'd'
+- state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+- state <idx:3>, head:None, tail:None
+- state <idx:4>, head:None, tail:None"
         );
     }
 }

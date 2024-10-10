@@ -8,23 +8,31 @@ use std::fmt::Display;
 
 #[derive(Debug, PartialEq)]
 pub struct Program {
-    // pub definitions: Vec<Definition>,
     pub expressions: Vec<Expression>,
 }
-
-// #[derive(Debug, PartialEq)]
-// pub struct Definition {
-//     pub identifier: String,
-//     pub expression: Box<Expression>,
-// }
 
 #[derive(Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
+
+    /**
+     * the _group_ of ANREG is different from the _group_ of
+     * oridinary regular expressions.
+     * ANREG's group is just a series of patterns, which will not
+     * be captured unless enclosed by the function 'name' or 'capture'.
+     * e.g.
+     * ANREG group `('a', 'b', char_word+)` is equivalent to oridinary regex `ab\w+`
+     */
     Group(Vec<Expression>),
+
     FunctionCall(Box<FunctionCall>),
-    Alternation(Box<Expression>, Box<Expression>),
+
+    /**
+     * Disjunction
+     * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Regular_expressions/Disjunction
+     */
+    Or(Box<Expression>, Box<Expression>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -38,13 +46,14 @@ pub struct FunctionCall {
 pub enum FunctionCallArg {
     Number(u32),
     Identifier(String),
+    Expression(Box<Expression>),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Literal {
     Char(char),
     String(String),
-    Symbol(String),
+    Status(String),
     CharSet(CharSet),
     PresetCharSet(String),
 }
@@ -60,7 +69,7 @@ pub enum CharSetElement {
     Char(char),
     CharRange(CharRange),
     PresetCharSet(String),
-    Symbol(String),
+    Status(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -87,14 +96,15 @@ pub enum FunctionName {
     RepeatRangeLazy,
     AtLeastLazy,
 
-    // Assertions
+    // Assertions ("判定")
     IsBefore,    // lookahead
     IsAfter,     // lookbehind
     IsNotBefore, // negative lookahead
     IsNotAfter,  // negative lookbehind
 
-    // Others
+    // Capture
     Name,
+    Capture,
 }
 
 impl Display for FunctionName {
@@ -117,6 +127,7 @@ impl Display for FunctionName {
             FunctionName::IsNotBefore => f.write_str("is_not_before"),
             FunctionName::IsNotAfter => f.write_str("is_not_after"),
             FunctionName::Name => f.write_str("name"),
+            FunctionName::Capture => f.write_str("capture"),
         }
     }
 }
@@ -133,7 +144,7 @@ impl Display for CharSetElement {
             CharSetElement::Char(c) => write!(f, "'{}'", c),
             CharSetElement::CharRange(c) => write!(f, "{}", c),
             CharSetElement::PresetCharSet(p) => f.write_str(p),
-            CharSetElement::Symbol(s) => f.write_str(s),
+            CharSetElement::Status(s) => f.write_str(s),
         }
     }
 }
@@ -156,7 +167,7 @@ impl Display for Literal {
             Literal::String(s) => write!(f, "\"{}\"", s),
             Literal::CharSet(c) => write!(f, "{}", c),
             Literal::PresetCharSet(p) => f.write_str(p),
-            Literal::Symbol(s) => f.write_str(s),
+            Literal::Status(s) => f.write_str(s),
         }
     }
 }
@@ -166,6 +177,7 @@ impl Display for FunctionCallArg {
         match self {
             FunctionCallArg::Number(n) => write!(f, "{}", n),
             FunctionCallArg::Identifier(i) => write!(f, "{}", i),
+            FunctionCallArg::Expression(e) => write!(f, "{}", e),
         }
     }
 }
@@ -191,18 +203,13 @@ impl Display for Expression {
                 write!(f, "({})", s.join(", "))
             }
             Expression::FunctionCall(fc) => write!(f, "{}", fc),
-            Expression::Alternation(left, right) => write!(f, "{} || {}", left, right),
+            Expression::Or(left, right) => write!(f, "{} || {}", left, right),
         }
     }
 }
 
-// impl Display for Definition {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "define({}, {})", self.identifier, self.expression)
-//     }
-// }
-
 impl Display for Program {
+    // for debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut exp_strings: Vec<String> = vec![];
         for (idx, expression) in self.expressions.iter().enumerate() {

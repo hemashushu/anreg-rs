@@ -23,33 +23,37 @@ pub enum Transition {
 impl Display for Transition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Transition::Jump(_) => f.write_str("Epsilon"),
-            Transition::Char(CharTransition { character, inverse }) => {
+            Transition::Jump(_) => f.write_str("Jump"),
+            Transition::Char(CharTransition {
+                character, /*, inverse */
+            }) => {
                 write!(
                     f,
-                    "Char {}",
-                    if *inverse {
-                        format!("^{}", character)
-                    } else {
-                        character.to_string()
-                    }
+                    "Char '{}'",
+                    character // if *inverse {
+                              //     format!("^{}", character)
+                              // } else {
+                              //     character.to_string()
+                              // }
                 )
             }
         }
     }
 }
 
-// Epsilon
+// Jump/Epsilon
 pub struct JumpTransition;
 
 pub struct CharTransition {
     pub character: char,
-    pub inverse: bool,
+    // pub inverse: bool,
 }
 
 impl CharTransition {
-    pub fn new(character: char, inverse: bool) -> Self {
-        CharTransition { character, inverse }
+    pub fn new(character: char /*, inverse: bool */) -> Self {
+        CharTransition {
+            character, /*, inverse */
+        }
     }
 }
 
@@ -65,8 +69,7 @@ impl TransitionTrait for JumpTransition {
 
 impl TransitionTrait for CharTransition {
     fn validated(&self, context: &Context) -> bool {
-        let position = context.get_last_position();
-        (self.character == context.text[position]) ^ self.inverse
+        self.character == context.get_current_char() /* ^ self.inverse */
     }
 
     fn forward(&self) -> usize {
