@@ -5,11 +5,14 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 use crate::{
-    ast::{Expression, Literal, Program},
+    ast::{CharRange, CharSet, CharSetElement, Expression, Literal, Program},
     error::Error,
     parser::parse_from_str,
     state::StateSet,
-    transition::{CharTransition, JumpTransition, StringTransition, Transition},
+    transition::{
+        CharSetItem, CharSetTransition, CharTransition, JumpTransition, SpecialCharTransition,
+        StringTransition, Transition,
+    },
 };
 
 pub fn compile(program: &Program) -> Result<StateSet, Error> {
@@ -143,24 +146,31 @@ impl<'a> Compiler<'a> {
 
     fn emit_literal(&mut self, literal: &Literal) -> Result<EmitResult, Error> {
         let result = match literal {
-            Literal::Char(character) => self.emit_literal_char(*character /*, false */)?,
+            Literal::Char(character) => self.emit_literal_char(*character)?,
             Literal::String(s) => self.emit_literal_string(s)?,
-            Literal::CharSet(_) => todo!(),
-            Literal::PresetCharSet(_) => todo!(),
-            Literal::Special(_) => todo!(),
-
+            Literal::CharSet(charset) => self.emit_literal_charset(charset)?,
+            Literal::PresetCharSet(name) => self.emit_literal_preset_charset(name)?,
+            Literal::Special(_) => self.emit_literal_special_char()?,
         };
 
         Ok(result)
     }
 
-    fn emit_literal_char(
-        &mut self,
-        character: char, /*, inverse: bool */
-    ) -> Result<EmitResult, Error> {
+    fn emit_literal_char(&mut self, character: char) -> Result<EmitResult, Error> {
         let in_state_index = self.state_set.new_state();
         let out_state_index = self.state_set.new_state();
-        let transition = Transition::Char(CharTransition::new(character /*, inverse */));
+
+        let transition = Transition::Char(CharTransition::new(character));
+        self.state_set
+            .append_transition(in_state_index, out_state_index, transition);
+        Ok(EmitResult::new(in_state_index, out_state_index))
+    }
+
+    fn emit_literal_special_char(&mut self) -> Result<EmitResult, Error> {
+        let in_state_index = self.state_set.new_state();
+        let out_state_index = self.state_set.new_state();
+
+        let transition = Transition::SpecialChar(SpecialCharTransition);
         self.state_set
             .append_transition(in_state_index, out_state_index, transition);
         Ok(EmitResult::new(in_state_index, out_state_index))
@@ -169,11 +179,97 @@ impl<'a> Compiler<'a> {
     fn emit_literal_string(&mut self, s: &str) -> Result<EmitResult, Error> {
         let in_state_index = self.state_set.new_state();
         let out_state_index = self.state_set.new_state();
+
         let transition = Transition::String(StringTransition::new(s));
         self.state_set
             .append_transition(in_state_index, out_state_index, transition);
         Ok(EmitResult::new(in_state_index, out_state_index))
     }
+
+    fn emit_literal_preset_charset(&mut self, name: &str) -> Result<EmitResult, Error> {
+        let in_state_index = self.state_set.new_state();
+        let out_state_index = self.state_set.new_state();
+
+        let charset_transition = match name {
+            "char_word" => CharSetTransition::new_preset_word(),
+            "char_not_word" => CharSetTransition::new_preset_not_word(),
+            "char_space" => CharSetTransition::new_preset_space(),
+            "char_not_space" => CharSetTransition::new_preset_not_space(),
+            "char_digit" => CharSetTransition::new_preset_digit(),
+            "char_not_digit" => CharSetTransition::new_preset_not_digit(),
+            _ => {
+                unreachable!()
+            }
+        };
+
+        let transition = Transition::CharSet(charset_transition);
+        self.state_set
+            .append_transition(in_state_index, out_state_index, transition);
+        Ok(EmitResult::new(in_state_index, out_state_index))
+    }
+
+    fn emit_literal_charset(&mut self, charset: &CharSet) -> Result<EmitResult, Error> {
+        let in_state_index = self.state_set.new_state();
+        let out_state_index = self.state_set.new_state();
+
+        let mut items: Vec<CharSetItem> = vec![];
+        append_charset(charset, &mut items)?;
+
+        let charset_transition = CharSetTransition::new(items, charset.negative);
+        let transition = Transition::CharSet(charset_transition);
+        self.state_set
+            .append_transition(in_state_index, out_state_index, transition);
+        Ok(EmitResult::new(in_state_index, out_state_index))
+    }
+}
+
+fn append_preset_charset_positive_only_by_name(
+    name: &str,
+    items: &mut Vec<CharSetItem>,
+) -> Result<(), Error> {
+    match name {
+        "char_word" => {
+            CharSetItem::add_preset_word(items);
+        }
+        "char_space" => {
+            CharSetItem::add_preset_space(items);
+        }
+        "char_digit" => {
+            CharSetItem::add_preset_digit(items);
+        }
+        "char_not_word" | "char_not_space" | "char_not_digit" => {
+            return Err(Error::Message(format!(
+                "Can not append negative preset charset \"{}\" into charset.",
+                name
+            )));
+        }
+        _ => {
+            unreachable!()
+        }
+    }
+
+    Ok(())
+}
+
+fn append_charset(charset: &CharSet, items: &mut Vec<CharSetItem>) -> Result<(), Error> {
+    for element in &charset.elements {
+        match element {
+            CharSetElement::Char(c) => CharSetItem::add_char(items, *c),
+            CharSetElement::CharRange(CharRange {
+                start,
+                end_included,
+            }) => CharSetItem::add_range(items, *start, *end_included),
+            CharSetElement::PresetCharSet(name) => {
+                append_preset_charset_positive_only_by_name(name, items)?;
+            }
+            CharSetElement::CharSet(custom_charset) => {
+                assert!(!custom_charset.negative);
+                append_charset(custom_charset, items)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 struct EmitResult {
@@ -390,5 +486,20 @@ mod tests {
 < 9"
             );
         }
+    }
+
+    #[test]
+    fn test_compile_special_char() {
+        // todo
+    }
+
+    #[test]
+    fn test_compile_preset_charset() {
+        // todo
+    }
+
+    #[test]
+    fn test_compile_charset() {
+        // todo
     }
 }

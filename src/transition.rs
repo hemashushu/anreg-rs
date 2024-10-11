@@ -31,6 +31,7 @@ trait TransitionTrait {
 pub enum Transition {
     Jump(JumpTransition),
     Char(CharTransition),
+    SpecialChar(SpecialCharTransition),
     String(StringTransition),
     CharSet(CharSetTransition),
 }
@@ -42,6 +43,7 @@ impl Display for Transition {
             Transition::Char(c) => write!(f, "{}", c),
             Transition::String(s) => write!(f, "{}", s),
             Transition::CharSet(c) => write!(f, "{}", c),
+            Transition::SpecialChar(s) => write!(f, "{}", s),
         }
     }
 }
@@ -89,6 +91,29 @@ impl TransitionTrait for CharTransition {
 impl Display for CharTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Char '{}'", self.character)
+    }
+}
+
+pub struct SpecialCharTransition;
+
+impl TransitionTrait for SpecialCharTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
+        // \n, \r, \u2028 or \u2029
+
+        let c = context.get_current_char();
+        let success = c != '\n' && c != '\r';
+        ValidateResult::new(success, 1)
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(1)
+    }
+}
+
+impl Display for SpecialCharTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Any char")
     }
 }
 
@@ -156,76 +181,73 @@ impl CharSetTransition {
     }
 
     pub fn new_preset_word() -> Self {
-        let mut charset = CharSetTransition::new(vec![], false);
-        charset.add_preset_word();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_word(&mut items);
+        CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_word() -> Self {
-        let mut charset = CharSetTransition::new(vec![], true);
-        charset.add_preset_word();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_word(&mut items);
+        CharSetTransition::new(items, true)
     }
 
     pub fn new_preset_space() -> Self {
-        let mut charset = CharSetTransition::new(vec![], false);
-        charset.add_preset_space();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_space(&mut items);
+        CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_space() -> Self {
-        let mut charset = CharSetTransition::new(vec![], true);
-        charset.add_preset_space();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_space(&mut items);
+        CharSetTransition::new(items, true)
     }
 
     pub fn new_preset_digit() -> Self {
-        let mut charset = CharSetTransition::new(vec![], false);
-        charset.add_preset_digit();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_digit(&mut items);
+        CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_digit() -> Self {
-        let mut charset = CharSetTransition::new(vec![], true);
-        charset.add_preset_digit();
-        charset
+        let mut items: Vec<CharSetItem> = vec![];
+        CharSetItem::add_preset_digit(&mut items);
+        CharSetTransition::new(items, true)
+    }
+}
+
+impl CharSetItem {
+    pub fn add_char(items: &mut Vec<CharSetItem>, c: char) {
+        items.push(CharSetItem::Char(c));
     }
 
-    pub fn add_char(&mut self, c: char) {
-        self.items.push(CharSetItem::Char(c));
+    pub fn add_range(items: &mut Vec<CharSetItem>, start: char, end_included: char) {
+        items.push(CharSetItem::Range(Range::new(start, end_included)));
     }
 
-    pub fn add_range(&mut self, start: char, end_included: char) {
-        self.items
-            .push(CharSetItem::Range(Range::new(start, end_included)));
-    }
-
-    pub fn add_items(&mut self, mut custom_items: Vec<CharSetItem>) {
-        self.items.append(&mut custom_items) // Vec::append = move
-    }
-
-    pub fn add_preset_space(&mut self) {
+    pub fn add_preset_space(items: &mut Vec<CharSetItem>) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // [\f\n\r\t\v\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]
-        self.add_char(' ');
-        self.add_char('\t');
-        self.add_char('\r');
-        self.add_char('\n');
+        Self::add_char(items, ' ');
+        Self::add_char(items, '\t');
+        Self::add_char(items, '\r');
+        Self::add_char(items, '\n');
     }
 
-    pub fn add_preset_word(&mut self) {
+    pub fn add_preset_word(items: &mut Vec<CharSetItem>) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // [A-Za-z0-9_]
-        self.add_range('A', 'Z');
-        self.add_range('a', 'z');
-        self.add_range('0', '9');
-        self.add_char('_');
+        Self::add_range(items, 'A', 'Z');
+        Self::add_range(items, 'a', 'z');
+        Self::add_range(items, '0', '9');
+        Self::add_char(items, '_');
     }
 
-    pub fn add_preset_digit(&mut self) {
+    pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // [0-9]
-        self.add_range('0', '9');
+        Self::add_range(items, '0', '9');
     }
 }
 
