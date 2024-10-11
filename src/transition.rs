@@ -153,7 +153,7 @@ impl Display for StringTransition {
 
 pub struct CharSetTransition {
     items: Vec<CharSetItem>,
-    inverse: bool,
+    negative: bool,
 }
 
 pub struct Range {
@@ -176,79 +176,77 @@ pub enum CharSetItem {
 }
 
 impl CharSetTransition {
-    pub fn new(items: Vec<CharSetItem>, inverse: bool) -> Self {
-        CharSetTransition { items, inverse }
+    pub fn new(items: Vec<CharSetItem>, negative: bool) -> Self {
+        CharSetTransition { items, negative }
     }
 
     pub fn new_preset_word() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_word(&mut items);
+        add_preset_word(&mut items);
         CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_word() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_word(&mut items);
+        add_preset_word(&mut items);
         CharSetTransition::new(items, true)
     }
 
     pub fn new_preset_space() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_space(&mut items);
+        add_preset_space(&mut items);
         CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_space() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_space(&mut items);
+        add_preset_space(&mut items);
         CharSetTransition::new(items, true)
     }
 
     pub fn new_preset_digit() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_digit(&mut items);
+        add_preset_digit(&mut items);
         CharSetTransition::new(items, false)
     }
 
     pub fn new_preset_not_digit() -> Self {
         let mut items: Vec<CharSetItem> = vec![];
-        CharSetItem::add_preset_digit(&mut items);
+        add_preset_digit(&mut items);
         CharSetTransition::new(items, true)
     }
 }
 
-impl CharSetItem {
-    pub fn add_char(items: &mut Vec<CharSetItem>, c: char) {
-        items.push(CharSetItem::Char(c));
-    }
+pub fn add_char(items: &mut Vec<CharSetItem>, c: char) {
+    items.push(CharSetItem::Char(c));
+}
 
-    pub fn add_range(items: &mut Vec<CharSetItem>, start: char, end_included: char) {
-        items.push(CharSetItem::Range(Range::new(start, end_included)));
-    }
+pub fn add_range(items: &mut Vec<CharSetItem>, start: char, end_included: char) {
+    items.push(CharSetItem::Range(Range::new(start, end_included)));
+}
 
-    pub fn add_preset_space(items: &mut Vec<CharSetItem>) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
-        // [\f\n\r\t\v\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]
-        Self::add_char(items, ' ');
-        Self::add_char(items, '\t');
-        Self::add_char(items, '\r');
-        Self::add_char(items, '\n');
-    }
+pub fn add_preset_space(items: &mut Vec<CharSetItem>) {
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
+    // [\f\n\r\t\v\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]
+    add_char(items, ' ');
+    add_char(items, '\t');
+    add_char(items, '\r');
+    add_char(items, '\n');
+}
 
-    pub fn add_preset_word(items: &mut Vec<CharSetItem>) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
-        // [A-Za-z0-9_]
-        Self::add_range(items, 'A', 'Z');
-        Self::add_range(items, 'a', 'z');
-        Self::add_range(items, '0', '9');
-        Self::add_char(items, '_');
-    }
+pub fn add_preset_word(items: &mut Vec<CharSetItem>) {
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
+    // [A-Za-z0-9_]
+    add_range(items, 'A', 'Z');
+    add_range(items, 'a', 'z');
+    add_range(items, '0', '9');
+    add_char(items, '_');
+}
 
-    pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
-        // [0-9]
-        Self::add_range(items, '0', '9');
-    }
+pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
+    // [0-9]
+    add_range(items, '0', '9');
 }
 
 impl TransitionTrait for CharSetTransition {
@@ -267,7 +265,7 @@ impl TransitionTrait for CharSetTransition {
             }
         }
 
-        ValidateResult::new(found ^ self.inverse, 1)
+        ValidateResult::new(found ^ self.negative, 1)
     }
 
     fn length(&self) -> Option<usize> {
@@ -280,17 +278,22 @@ impl Display for CharSetTransition {
         let mut lines = vec![];
         for item in &self.items {
             let line = match item {
-                CharSetItem::Char(c) => c.to_string(),
+                CharSetItem::Char(c) => match c {
+                    '\t' => "'\\t'".to_owned(),
+                    '\r' => "'\\r'".to_owned(),
+                    '\n' => "'\\n'".to_owned(),
+                    _ => format!("'{}'", c),
+                },
                 CharSetItem::Range(r) => format!("'{}'..'{}'", r.start, r.end_included),
             };
             lines.push(line);
         }
 
         let content = lines.join(", ");
-        if self.inverse {
-            write!(f, "![{}]", content)
+        if self.negative {
+            write!(f, "Charset ![{}]", content)
         } else {
-            write!(f, "[{}]", content)
+            write!(f, "Charset [{}]", content)
         }
     }
 }

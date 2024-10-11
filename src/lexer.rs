@@ -811,7 +811,7 @@ impl<'a> Lexer<'a> {
         self.next_char(); // consume '*'
 
         let mut comment_string = String::new();
-        let mut depth = 1;
+        let mut depth = 1; // nested depth
 
         loop {
             match self.next_char() {

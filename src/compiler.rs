@@ -10,8 +10,9 @@ use crate::{
     parser::parse_from_str,
     state::StateSet,
     transition::{
-        CharSetItem, CharSetTransition, CharTransition, JumpTransition, SpecialCharTransition,
-        StringTransition, Transition,
+        add_char, add_preset_digit, add_preset_space, add_preset_word, add_range, CharSetItem,
+        CharSetTransition, CharTransition, JumpTransition, SpecialCharTransition, StringTransition,
+        Transition,
     },
 };
 
@@ -229,13 +230,13 @@ fn append_preset_charset_positive_only_by_name(
 ) -> Result<(), Error> {
     match name {
         "char_word" => {
-            CharSetItem::add_preset_word(items);
+            add_preset_word(items);
         }
         "char_space" => {
-            CharSetItem::add_preset_space(items);
+            add_preset_space(items);
         }
         "char_digit" => {
-            CharSetItem::add_preset_digit(items);
+            add_preset_digit(items);
         }
         "char_not_word" | "char_not_space" | "char_not_digit" => {
             return Err(Error::Message(format!(
@@ -254,11 +255,11 @@ fn append_preset_charset_positive_only_by_name(
 fn append_charset(charset: &CharSet, items: &mut Vec<CharSetItem>) -> Result<(), Error> {
     for element in &charset.elements {
         match element {
-            CharSetElement::Char(c) => CharSetItem::add_char(items, *c),
+            CharSetElement::Char(c) => add_char(items, *c),
             CharSetElement::CharRange(CharRange {
                 start,
                 end_included,
-            }) => CharSetItem::add_range(items, *start, *end_included),
+            }) => add_range(items, *start, *end_included),
             CharSetElement::PresetCharSet(name) => {
                 append_preset_charset_positive_only_by_name(name, items)?;
             }
@@ -490,16 +491,152 @@ mod tests {
 
     #[test]
     fn test_compile_special_char() {
-        // todo
+        {
+            let state_set = compile_from_str(r#"'a', char_any"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Any char
+< 3"
+            );
+        }
     }
 
     #[test]
     fn test_compile_preset_charset() {
-        // todo
+        {
+            let state_set = compile_from_str(r#"'a', char_word, char_space, char_digit"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Charset ['A'..'Z', 'a'..'z', '0'..'9', '_']
+- 3
+  -> 4, Jump
+- 4
+  -> 5, Charset [' ', '\\t', '\\r', '\\n']
+- 5
+  -> 6, Jump
+- 6
+  -> 7, Charset ['0'..'9']
+< 7"
+            );
+        }
+
+        {
+            let state_set =
+                compile_from_str(r#"'a', char_not_word, char_not_space, char_not_digit"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Char 'a'
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Charset !['A'..'Z', 'a'..'z', '0'..'9', '_']
+- 3
+  -> 4, Jump
+- 4
+  -> 5, Charset ![' ', '\\t', '\\r', '\\n']
+- 5
+  -> 6, Jump
+- 6
+  -> 7, Charset !['0'..'9']
+< 7"
+            );
+        }
     }
 
     #[test]
     fn test_compile_charset() {
-        // todo
+        {
+            let state_set = compile_from_str(r#"['a', '0'..'7']"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Charset ['a', '0'..'7']
+< 1"
+            );
+        }
+
+        {
+            let state_set = compile_from_str(r#"['a', char_digit]"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Charset ['a', '0'..'9']
+< 1"
+            );
+        }
+
+        // nested charset
+
+        {
+            let state_set = compile_from_str(r#"['a', ['x'..'z']]"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Charset ['a', 'x'..'z']
+< 1"
+            );
+        }
+
+        {
+            let state_set =
+                compile_from_str(r#"[['+', '-'], ['0'..'9', ['a'..'f', char_space]]]"#).unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Charset ['+', '-', '0'..'9', 'a'..'f', ' ', '\\t', '\\r', '\\n']
+< 1"
+            );
+        }
+
+        {
+            let state_set = compile_from_str(
+                r#"
+define(prefix, ['+', '-'])
+define(letter, ['a'..'f', char_space])
+[prefix, ['0'..'9', letter]]"#,
+            )
+            .unwrap();
+            let s = state_set.generate_states_and_transitions_text();
+
+            assert_str_eq!(
+                s,
+                "\
+> 0
+  -> 1, Charset ['+', '-', '0'..'9', 'a'..'f', ' ', '\\t', '\\r', '\\n']
+< 1"
+            );
+        }
     }
 }
