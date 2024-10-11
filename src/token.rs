@@ -40,7 +40,7 @@ pub enum Token {
     Identifier(String),
     PresetCharSet(String),
     Special(String),
-    Status(String),
+    Assertion(String),
 
     Number(u32),
     Char(char),
@@ -103,7 +103,7 @@ impl Token {
             Token::Identifier(id) => format!("identifier \"{}\"", id),
             Token::PresetCharSet(s) => format!("preset charset \"{}\"", s),
             Token::Special(s) => format!("special \"{}\"", s),
-            Token::Status(k) => format!("status \"{}\"", k),
+            Token::Assertion(k) => format!("assertion \"{}\"", k),
             Token::Number(n) => format!("number \"{}\"", n),
             Token::Char(c) => format!("char \"{}\"", c),
             Token::String(_) => "string".to_owned(),

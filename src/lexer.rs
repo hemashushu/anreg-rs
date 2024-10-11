@@ -389,7 +389,7 @@ impl<'a> Lexer<'a> {
         );
 
         let token = match name_string.as_str() {
-            "start" | "end" | "bound" | "not_bound" => Token::Status(name_string),
+            "start" | "end" | "is_bound" | "is_not_bound" => Token::Assertion(name_string),
             "char_space" | "char_not_space" | "char_word" | "char_not_word" | "char_digit"
             | "char_not_digit" => Token::PresetCharSet(name_string),
             "char_any" => Token::Special(name_string),
@@ -888,7 +888,7 @@ mod tests {
         }
 
         pub fn new_symbol(s: &str) -> Self {
-            Token::Status(s.to_owned())
+            Token::Assertion(s.to_owned())
         }
 
         pub fn new_special(s: &str) -> Self {
@@ -1166,13 +1166,13 @@ mod tests {
     #[test]
     fn test_lex_other_identifier() {
         assert_eq!(
-            lex_from_str_without_location("char_any start end bound not_bound").unwrap(),
+            lex_from_str_without_location("char_any start end is_bound is_not_bound").unwrap(),
             vec![
                 Token::new_special("char_any"),
                 Token::new_symbol("start"),
                 Token::new_symbol("end"),
-                Token::new_symbol("bound"),
-                Token::new_symbol("not_bound"),
+                Token::new_symbol("is_bound"),
+                Token::new_symbol("is_not_bound"),
             ]
         );
 

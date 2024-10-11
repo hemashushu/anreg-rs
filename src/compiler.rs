@@ -50,7 +50,7 @@ impl<'a> Compiler<'a> {
         let result = match expression {
             Expression::Literal(literal) => self.emit_literal(literal)?,
             Expression::Identifier(_) => todo!(),
-            Expression::Status(_) => todo!(),
+            Expression::Assertion(_) => todo!(),
             Expression::Group(expressions) => self.emit_group(expressions)?,
             Expression::FunctionCall(_) => todo!(),
             Expression::Or(left, right) => self.emit_logic_or(left, right)?,

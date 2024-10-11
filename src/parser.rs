@@ -515,7 +515,7 @@ impl<'a> Parser<'a> {
         // base expression:
         // - literal
         // - identifier
-        // - status
+        // - assertion
         // - group
         // - function call
         let expression = match self.peek_token(0) {
@@ -535,10 +535,10 @@ impl<'a> Parser<'a> {
                         self.next_token(); // consume identifier
                         Expression::Identifier(id)
                     }
-                    Token::Status(status_ref) => {
-                        let status = status_ref.to_owned();
-                        self.next_token(); // consume status
-                        Expression::Status(status)
+                    Token::Assertion(assertion_ref) => {
+                        let assertion = assertion_ref.to_owned();
+                        self.next_token(); // consume assertion
+                        Expression::Assertion(assertion)
                     }
                     _ => {
                         let literal = self.parse_literal()?;

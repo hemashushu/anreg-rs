@@ -15,7 +15,7 @@ pub struct Program {
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
-    Status(String),
+    Assertion(String),
 
     /**
      * the _group_ of ANREG is different from the _group_ of
@@ -199,7 +199,7 @@ impl Display for Expression {
         match self {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Identifier(id) => f.write_str(id),
-            Expression::Status(s) => f.write_str(s),
+            Expression::Assertion(s) => f.write_str(s),
             Expression::Group(g) => {
                 let s: Vec<String> = g.iter().map(|e| e.to_string()).collect();
                 write!(f, "({})", s.join(", "))
