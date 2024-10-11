@@ -15,6 +15,7 @@ pub struct Program {
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
+    Status(String),
 
     /**
      * the _group_ of ANREG is different from the _group_ of
@@ -53,7 +54,7 @@ pub enum FunctionCallArg {
 pub enum Literal {
     Char(char),
     String(String),
-    Status(String),
+    Special(String),
     CharSet(CharSet),
     PresetCharSet(String),
 }
@@ -69,7 +70,7 @@ pub enum CharSetElement {
     Char(char),
     CharRange(CharRange),
     PresetCharSet(String),
-    Status(String),
+    CharSet(Box<CharSet>)
 }
 
 #[derive(Debug, PartialEq)]
@@ -144,7 +145,7 @@ impl Display for CharSetElement {
             CharSetElement::Char(c) => write!(f, "'{}'", c),
             CharSetElement::CharRange(c) => write!(f, "{}", c),
             CharSetElement::PresetCharSet(p) => f.write_str(p),
-            CharSetElement::Status(s) => f.write_str(s),
+            CharSetElement::CharSet(c) => write!(f, "{}", c),
         }
     }
 }
@@ -167,7 +168,7 @@ impl Display for Literal {
             Literal::String(s) => write!(f, "\"{}\"", s),
             Literal::CharSet(c) => write!(f, "{}", c),
             Literal::PresetCharSet(p) => f.write_str(p),
-            Literal::Status(s) => f.write_str(s),
+            Literal::Special(s) => write!(f, "{}", s),
         }
     }
 }
@@ -198,6 +199,7 @@ impl Display for Expression {
         match self {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Identifier(id) => f.write_str(id),
+            Expression::Status(s) => f.write_str(s),
             Expression::Group(g) => {
                 let s: Vec<String> = g.iter().map(|e| e.to_string()).collect();
                 write!(f, "({})", s.join(", "))

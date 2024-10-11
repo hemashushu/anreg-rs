@@ -9,7 +9,7 @@ use crate::{
     error::Error,
     parser::parse_from_str,
     state::StateSet,
-    transition::{CharTransition, JumpTransition, Transition},
+    transition::{CharTransition, JumpTransition, StringTransition, Transition},
 };
 
 pub fn compile(program: &Program) -> Result<StateSet, Error> {
@@ -47,6 +47,7 @@ impl<'a> Compiler<'a> {
         let result = match expression {
             Expression::Literal(literal) => self.emit_literal(literal)?,
             Expression::Identifier(_) => todo!(),
+            Expression::Status(_) => todo!(),
             Expression::Group(expressions) => self.emit_group(expressions)?,
             Expression::FunctionCall(_) => todo!(),
             Expression::Or(left, right) => self.emit_logic_or(left, right)?,
@@ -142,20 +143,33 @@ impl<'a> Compiler<'a> {
 
     fn emit_literal(&mut self, literal: &Literal) -> Result<EmitResult, Error> {
         let result = match literal {
-            Literal::Char(character) => self.emit_literal_char(*character, false)?,
-            Literal::String(_) => todo!(),
-            Literal::Status(_) => todo!(),
+            Literal::Char(character) => self.emit_literal_char(*character /*, false */)?,
+            Literal::String(s) => self.emit_literal_string(s)?,
             Literal::CharSet(_) => todo!(),
             Literal::PresetCharSet(_) => todo!(),
+            Literal::Special(_) => todo!(),
+
         };
 
         Ok(result)
     }
 
-    fn emit_literal_char(&mut self, character: char, inverse: bool) -> Result<EmitResult, Error> {
+    fn emit_literal_char(
+        &mut self,
+        character: char, /*, inverse: bool */
+    ) -> Result<EmitResult, Error> {
         let in_state_index = self.state_set.new_state();
         let out_state_index = self.state_set.new_state();
         let transition = Transition::Char(CharTransition::new(character /*, inverse */));
+        self.state_set
+            .append_transition(in_state_index, out_state_index, transition);
+        Ok(EmitResult::new(in_state_index, out_state_index))
+    }
+
+    fn emit_literal_string(&mut self, s: &str) -> Result<EmitResult, Error> {
+        let in_state_index = self.state_set.new_state();
+        let out_state_index = self.state_set.new_state();
+        let transition = Transition::String(StringTransition::new(s));
         self.state_set
             .append_transition(in_state_index, out_state_index, transition);
         Ok(EmitResult::new(in_state_index, out_state_index))
@@ -376,6 +390,5 @@ mod tests {
 < 9"
             );
         }
-
     }
 }

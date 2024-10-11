@@ -4,7 +4,7 @@ version = "1.1.0"
 edition = "2021"
 
 license = "MPL-2.0"
-description = "Anreg is a lightweight regular expression engine (interpreter) for XiaoXuan Regular Expression."
+description = "ANREG is a brand new regex language that offers all the capabilities of traditional regex but in much simpler form."
 homepage = "https://hemashushu.github.io/works/anreg"
 documentation = "https://hemashushu.github.io/works/anreg"
 repository = "https://github.com/hemashushu/anreg-rs"

@@ -480,10 +480,12 @@ impl<'a> Parser<'a> {
                     args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
-                    return Err(Error::MessageWithLocation(
-                        "Unsupported argument value.".to_owned(),
-                        self.last_range,
-                    ));
+                    // return Err(Error::MessageWithLocation(
+                    //     "Unsupported argument value.".to_owned(),
+                    //     self.last_range,
+                    // ));
+                    let expression = self.parse_expression()?;
+                    args.push(FunctionCallArg::Expression(Box::new(expression)));
                 }
             }
 
@@ -513,6 +515,7 @@ impl<'a> Parser<'a> {
         // base expression:
         // - literal
         // - identifier
+        // - status
         // - group
         // - function call
         let expression = match self.peek_token(0) {
@@ -526,10 +529,16 @@ impl<'a> Parser<'a> {
                         // function call
                         self.parse_function_call()?
                     }
-                    Token::Identifier(_) => {
+                    Token::Identifier(id_ref) => {
                         // identifier
-                        let id = self.expect_identifier()?;
+                        let id = id_ref.to_owned();
+                        self.next_token(); // consume identifier
                         Expression::Identifier(id)
+                    }
+                    Token::Status(status_ref) => {
+                        let status = status_ref.to_owned();
+                        self.next_token(); // consume status
+                        Expression::Status(status)
                     }
                     _ => {
                         let literal = self.parse_literal()?;
@@ -610,10 +619,12 @@ impl<'a> Parser<'a> {
                     args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
-                    return Err(Error::MessageWithLocation(
-                        "Unsupported argument value.".to_owned(),
-                        self.last_range,
-                    ));
+                    // return Err(Error::MessageWithLocation(
+                    //     "Unsupported argument value.".to_owned(),
+                    //     self.last_range,
+                    // ));
+                    let expression = self.parse_expression()?;
+                    args.push(FunctionCallArg::Expression(Box::new(expression)));
                 }
             }
 
@@ -645,7 +656,7 @@ impl<'a> Parser<'a> {
         //   - string
         //   - charset
         //   - preset_charset
-        //   - status
+        //   - special
 
         match self.peek_token(0) {
             Some(token) => {
@@ -682,10 +693,10 @@ impl<'a> Parser<'a> {
                         self.next_token(); // consume preset charset
                         Literal::PresetCharSet(preset_charset)
                     }
-                    Token::Status(status_ref) => {
-                        let status = status_ref.to_owned();
-                        self.next_token(); // consume status
-                        Literal::Status(status)
+                    Token::Special(special_ref) => {
+                        let special = special_ref.to_owned();
+                        self.next_token(); // consume special
+                        Literal::Special(special)
                     }
                     _ => {
                         return Err(Error::MessageWithLocation(
@@ -704,7 +715,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_charset(&mut self) -> Result<Vec<CharSetElement>, Error> {
-        // "[" {char | char_range | preset_charset | status} "]" ?
+        // "[" {char | char_range | preset_charset | char_set} "]" ?
         // ---                                                   -
         // ^                                                     ^__ to here
         // | current, validated
@@ -740,12 +751,16 @@ impl<'a> Parser<'a> {
                     self.next_token(); // consume preset charset
                     elements.push(CharSetElement::PresetCharSet(preset_charset));
                 }
-                Token::Status(status_ref) => {
-                    // status
-                    // such as "first", "last", "bound"
-                    let status = status_ref.to_owned();
-                    self.next_token(); // consume status
-                    elements.push(CharSetElement::Status(status));
+                Token::LeftBracket => {
+                    // custom char set
+                    // such as ['a'..'f']
+                    // note that the negative-charset (e.g. !['0'..'7']) is not allowed.
+                    let custom_charset_elements = self.parse_charset()?;
+                    let custom_charset = CharSet {
+                        negative: false,
+                        elements: custom_charset_elements,
+                    };
+                    elements.push(CharSetElement::CharSet(Box::new(custom_charset)));
                 }
                 _ => {
                     return Err(Error::MessageWithLocation(
@@ -886,7 +901,7 @@ mod tests {
     fn test_parse_literal_simple() {
         let program = parse_from_str(
             r#"
-start, 'a', "foo", char_word
+'a', "foo", char_word
     "#,
         )
         .unwrap();
@@ -896,7 +911,6 @@ start, 'a', "foo", char_word
             Program {
                 // definitions: vec![],
                 expressions: vec![
-                    Expression::Literal(Literal::Status("start".to_owned())),
                     Expression::Literal(Literal::Char('a')),
                     Expression::Literal(Literal::String("foo".to_owned())),
                     Expression::Literal(Literal::PresetCharSet("char_word".to_owned())),
@@ -904,14 +918,14 @@ start, 'a', "foo", char_word
             }
         );
 
-        assert_eq!(program.to_string(), r#"start, 'a', "foo", char_word"#);
+        assert_eq!(program.to_string(), r#"'a', "foo", char_word"#);
     }
 
     #[test]
     fn test_parse_literal_charset() {
         let program = parse_from_str(
             r#"
-['a', '0'..'9', char_word, end]
+['a', '0'..'9', char_word]
     "#,
         )
         .unwrap();
@@ -929,13 +943,12 @@ start, 'a', "foo", char_word
                             end_included: '9'
                         }),
                         CharSetElement::PresetCharSet("char_word".to_owned()),
-                        CharSetElement::Status("end".to_owned())
                     ]
                 })),]
             }
         );
 
-        assert_eq!(program.to_string(), r#"['a', '0'..'9', char_word, end]"#);
+        assert_eq!(program.to_string(), r#"['a', '0'..'9', char_word]"#);
 
         // negative
         assert_eq!(
@@ -949,6 +962,18 @@ start, 'a', "foo", char_word
             r#"!['a'..'z', char_space]"#
         );
 
+        // nested
+        assert_eq!(
+            parse_from_str(
+                r#"
+['_', ['a'..'f'], ['0'..'9']]
+    "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"['_', ['a'..'f'], ['0'..'9']]"#
+        );
+
         // multiline
         assert_eq!(
             parse_from_str(
@@ -959,12 +984,11 @@ start, 'a', "foo", char_word
     ..
     '9'
     char_word
-    end
 ]"#,
             )
             .unwrap()
             .to_string(),
-            r#"['a', '0'..'9', char_word, end]"#
+            r#"['a', '0'..'9', char_word]"#
         );
 
         // multiline with comma
@@ -977,12 +1001,11 @@ start, 'a', "foo", char_word
     ..
     '9',
     char_word,
-    end,
 ]"#,
             )
             .unwrap()
             .to_string(),
-            r#"['a', '0'..'9', char_word, end]"#
+            r#"['a', '0'..'9', char_word]"#
         );
     }
 
@@ -1027,6 +1050,17 @@ at_least('c'
 repeat_range('b', 5, 7)
 at_least('c', 11)"#
         );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+is_after("bar", "foo" || 'f'{3})
+                "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"is_after("bar", "foo" || repeat('f', 3))"#
+        );
     }
 
     #[test]
@@ -1065,6 +1099,17 @@ name("xyz", prefix)"#
             r#"repeat('a', 3)
 repeat_range('b', 5, 7)
 at_least('c', 11)"#
+        );
+
+        assert_eq!(
+            parse_from_str(
+                r#"
+"bar".is_after("foo" || 'f'{3})
+                "#,
+            )
+            .unwrap()
+            .to_string(),
+            r#"is_after("bar", "foo" || repeat('f', 3))"#
         );
     }
 
@@ -1172,6 +1217,11 @@ char_digit.one_or_more() || [char_word, '-']+
             .to_string(),
             r#"one_or_more(char_digit) || one_or_more([char_word, '-'])"#
         );
+    }
+
+    #[test]
+    fn test_parse_expression_identifier_and_status() {
+        // todo
     }
 
     #[test]

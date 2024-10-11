@@ -301,7 +301,7 @@ impl<'a> Lexer<'a> {
                 }
                 'a'..='z' | 'A'..='Z' | '_' | '\u{a0}'..='\u{d7ff}' | '\u{e000}'..='\u{10ffff}' => {
                     // identifier (the key name of struct/object) or keyword
-                    token_ranges.push(self.lex_identifier_or_keyword()?);
+                    token_ranges.push(self.lex_identifier()?);
                 }
                 current_char => {
                     return Err(Error::MessageWithLocation(
@@ -315,7 +315,7 @@ impl<'a> Lexer<'a> {
         Ok(token_ranges)
     }
 
-    fn lex_identifier_or_keyword(&mut self) -> Result<TokenWithRange, Error> {
+    fn lex_identifier(&mut self) -> Result<TokenWithRange, Error> {
         // key_nameT  //
         // ^       ^__// to here
         // |__________// current char, validated
@@ -392,6 +392,7 @@ impl<'a> Lexer<'a> {
             "start" | "end" | "bound" | "not_bound" => Token::Status(name_string),
             "char_space" | "char_not_space" | "char_word" | "char_not_word" | "char_digit"
             | "char_not_digit" => Token::PresetCharSet(name_string),
+            "char_any" => Token::Special(name_string),
             _ => Token::Identifier(name_string),
         };
 
@@ -890,6 +891,10 @@ mod tests {
             Token::Status(s.to_owned())
         }
 
+        pub fn new_special(s: &str) -> Self {
+            Token::Special(s.to_owned())
+        }
+
         pub fn new_preset_charset(s: &str) -> Self {
             Token::PresetCharSet(s.to_owned())
         }
@@ -1123,37 +1128,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lex_symbol() {
-        assert_eq!(
-            lex_from_str_without_location("start end bound not_bound").unwrap(),
-            vec![
-                Token::new_symbol("start"),
-                Token::new_symbol("end"),
-                Token::new_symbol("bound"),
-                Token::new_symbol("not_bound"),
-            ]
-        );
-
-        // location
-
-        assert_eq!(
-            lex_from_str("start end").unwrap(),
-            vec![
-                TokenWithRange::from_position_and_length(
-                    Token::new_symbol("start"),
-                    &Location::new_position(0, 0, 0, 0),
-                    5
-                ),
-                TokenWithRange::from_position_and_length(
-                    Token::new_symbol("end"),
-                    &Location::new_position(0, 6, 0, 6),
-                    3
-                )
-            ]
-        );
-    }
-
-    #[test]
     fn test_lex_preset_charset() {
         assert_eq!(
             lex_from_str_without_location(
@@ -1184,6 +1158,38 @@ mod tests {
                     Token::new_preset_charset("char_not_digit"),
                     &Location::new_position(0, 11, 0, 11),
                     14
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lex_other_identifier() {
+        assert_eq!(
+            lex_from_str_without_location("char_any start end bound not_bound").unwrap(),
+            vec![
+                Token::new_special("char_any"),
+                Token::new_symbol("start"),
+                Token::new_symbol("end"),
+                Token::new_symbol("bound"),
+                Token::new_symbol("not_bound"),
+            ]
+        );
+
+        // location
+
+        assert_eq!(
+            lex_from_str("start end").unwrap(),
+            vec![
+                TokenWithRange::from_position_and_length(
+                    Token::new_symbol("start"),
+                    &Location::new_position(0, 0, 0, 0),
+                    5
+                ),
+                TokenWithRange::from_position_and_length(
+                    Token::new_symbol("end"),
+                    &Location::new_position(0, 6, 0, 6),
+                    3
                 )
             ]
         );
