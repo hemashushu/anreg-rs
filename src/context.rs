@@ -11,6 +11,7 @@ pub struct Context {
     pub fixed_end: bool,      // it is true when the expression ends with `$`
     pub cursors: Vec<Cursor>, // the `Cursor` stack.
     pub position: usize,      // it is sync to the position of the last cursor
+    pub results: Vec<Result>, // the results of matches
 }
 
 // The `Cursor` can only be moved to left as a whole,
@@ -24,10 +25,7 @@ pub struct Cursor {
     // unlike the `start` position of `Cursor`, this value can only
     // be increased (moved to right).
     pub position: usize,
-    // // the position of the currently consumed character.
-    // // which is normally the same as `match_position`, but
-    // // is different only when an asserted match is encountered.
-    // pub text_position: usize,
+
 }
 
 // the Cursor stack demo:
@@ -79,6 +77,11 @@ pub struct Cursor {
 // |=============*=======================| <-- cursor 0
 //               ^__ position (move to right only)
 
+pub struct Result {
+    start: usize,
+    end_included: usize
+}
+
 impl Context {
     #[inline]
     pub fn get_current_char(&self) -> char {
@@ -98,10 +101,12 @@ impl Context {
     pub fn is_word_bound(&self) -> bool {
         let current_char = self.get_current_char();
 
-        if is_word_char(current_char) {
-            !is_word_char(self.get_previous_char()) || !is_word_char(self.get_next_char())
+        if Context::is_word_char(current_char) {
+            !Context::is_word_char(self.get_previous_char())
+                || !Context::is_word_char(self.get_next_char())
         } else {
-            is_word_char(self.get_previous_char()) || is_word_char(self.get_next_char())
+            Context::is_word_char(self.get_previous_char())
+                || Context::is_word_char(self.get_next_char())
         }
     }
 
@@ -127,11 +132,13 @@ impl Context {
             self.get_char(self.position + 1)
         }
     }
-}
 
-fn is_word_char(c: char) -> bool {
-    ('a'..='z').any(|e| e == c)
-        || ('A'..='Z').any(|e| e == c)
-        || ('0'..='9').any(|e| e == c)
-        || c == '_'
+    #[inline]
+    fn is_word_char(c: char) -> bool {
+        ('a'..='z').any(|e| e == c)
+            || ('A'..='Z').any(|e| e == c)
+            || ('0'..='9').any(|e| e == c)
+            || c == '_'
+    }
+
 }

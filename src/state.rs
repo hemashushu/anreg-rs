@@ -20,8 +20,13 @@ pub struct StateSet {
     pub start_node_index: usize,
     pub end_node_index: usize,
     states: Vec<StateNode>,
+
+    /*
+     * object references
+     */
     links: Vec<LinkNode>,
     transitions: Vec<TransitionNode>,
+    matches: Vec<Match>,
 }
 
 // Every state node has one or more transitions.
@@ -41,6 +46,10 @@ struct TransitionNode {
     target_state_index: usize, // the index of next state
 }
 
+struct Match {
+    name: Option<String>,
+}
+
 impl StateSet {
     pub fn new() -> Self {
         StateSet {
@@ -49,6 +58,7 @@ impl StateSet {
             states: vec![],
             links: vec![],
             transitions: vec![],
+            matches: vec![],
         }
     }
 
@@ -171,6 +181,19 @@ impl StateSet {
         }
     }
 
+    pub fn new_match(&mut self, name: Option<String>) -> usize {
+        let idx = self.matches.len();
+        self.matches.push(Match { name });
+        idx
+    }
+
+    pub fn find_match_index(&self, name: &str) -> Option<usize> {
+        self.matches.iter().position(|e| match &e.name {
+            Some(n) => n == name,
+            None => false,
+        })
+    }
+
     // for debug
     //     pub fn get_transition_index_list(&self, source_state_index: usize) -> Vec<usize> {
     //         let mut indices = vec![];
@@ -185,8 +208,10 @@ impl StateSet {
     //     }
 
     // for debug
-    pub fn generate_states_linklist_and_transitions_text(&self) -> String {
+    pub fn print_text_verbose(&self) -> String {
         let mut lines = vec![];
+
+        // states and transitions
         for (state_index, state_node) in self.states.iter().enumerate() {
             let prefix = if state_index == self.start_node_index {
                 '>'
@@ -196,12 +221,15 @@ impl StateSet {
                 '-'
             };
 
+            // states
+
             let state_line = format!(
                 "{} state <idx:{}>, head:{:?}, tail:{:?}",
                 prefix, state_index, state_node.link_head_index, state_node.link_tail_index
             );
             lines.push(state_line);
 
+            // transitions (as well as the link list)
             let mut next_link_node_index = state_node.link_head_index;
             while let Some(link_node_index) = next_link_node_index {
                 let link_node = &self.links[link_node_index];
@@ -227,12 +255,24 @@ impl StateSet {
             }
         }
 
+        // groups
+        for (match_index, m) in self.matches.iter().enumerate() {
+            let match_line = if let Some(n) = &m.name {
+                format!("# group {{idx:{}}}, {}", match_index, n)
+            } else {
+                format!("# group {{idx:{}}}", match_index)
+            };
+            lines.push(match_line);
+        }
+
         lines.join("\n")
     }
 
     // for debug
-    pub fn generate_states_and_transitions_text(&self) -> String {
+    pub fn print_text(&self) -> String {
         let mut lines = vec![];
+
+        // states and transitions
         for (state_index, state_node) in self.states.iter().enumerate() {
             let prefix = if state_index == self.start_node_index {
                 '>'
@@ -262,6 +302,16 @@ impl StateSet {
             }
         }
 
+        // groups
+        for (match_index, m) in self.matches.iter().enumerate() {
+            let match_line = if let Some(n) = &m.name {
+                format!("# {{{}}}, {}", match_index, n)
+            } else {
+                format!("# {{{}}}", match_index)
+            };
+            lines.push(match_line);
+        }
+
         lines.join("\n")
     }
 }
@@ -271,9 +321,9 @@ impl StateNode {
         self.link_head_index.is_none()
     }
 
-    pub fn get_first_transition_index(&self) -> Option<usize> {
-        self.link_head_index
-    }
+    // pub fn get_first_transition_index(&self) -> Option<usize> {
+    //     self.link_head_index
+    // }
 }
 
 #[cfg(test)]
@@ -294,7 +344,7 @@ mod tests {
 
         assert!(!state_set.is_empty());
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:None, tail:None"
         );
@@ -308,7 +358,7 @@ mod tests {
         state_set.end_node_index = idx2;
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 - state <idx:0>, head:None, tail:None
 > state <idx:1>, head:None, tail:None
@@ -333,7 +383,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(0)
   * link (0), prev:None, next:None
@@ -357,7 +407,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(2)
   * link (0), prev:None, next:Some(1)
@@ -379,7 +429,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(3), tail:Some(2)
   * link (3), prev:None, next:Some(0)
@@ -413,7 +463,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(0)
   * link (0), prev:None, next:None
@@ -437,7 +487,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(2), tail:Some(0)
   * link (2), prev:None, next:Some(1)
@@ -459,7 +509,7 @@ mod tests {
         );
 
         assert_str_eq!(
-            state_set.generate_states_linklist_and_transitions_text(),
+            state_set.print_text_verbose(),
             "\
 > state <idx:0>, head:Some(2), tail:Some(3)
   * link (2), prev:None, next:Some(1)
@@ -475,5 +525,29 @@ mod tests {
 - state <idx:3>, head:None, tail:None
 - state <idx:4>, head:None, tail:None"
         );
+    }
+
+    #[test]
+    fn test_state_match_append() {
+        let mut state_set = StateSet::new();
+        state_set.new_state();
+        state_set.new_state();
+
+        state_set.new_match(None);
+        state_set.new_match(Some("foo".to_owned()));
+        state_set.new_match(None);
+
+        assert_str_eq!(
+            state_set.print_text_verbose(),
+            "\
+> state <idx:0>, head:None, tail:None
+- state <idx:1>, head:None, tail:None
+# group {idx:0}
+# group {idx:1}, foo
+# group {idx:2}"
+        );
+
+        assert_eq!(state_set.find_match_index("foo"), Some(1));
+        assert!(state_set.find_match_index("bar").is_none());
     }
 }

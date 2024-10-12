@@ -6,27 +6,7 @@
 
 use std::fmt::Display;
 
-use crate::context::Context;
-
-pub struct ValidateResult {
-    success: bool,
-    forward: usize,
-}
-
-impl ValidateResult {
-    fn new(success: bool, forward: usize) -> Self {
-        ValidateResult { success, forward }
-    }
-}
-
-trait TransitionTrait {
-    fn validated(&self, context: &Context) -> ValidateResult;
-
-    // Not all transitions have a fixed length, e.g.
-    // the length of "a{3,5}" varies, but the
-    // "a{3}" is 3.
-    fn length(&self) -> Option<usize>;
-}
+use crate::{ast::AssertionName, context::Context};
 
 pub enum Transition {
     Jump(JumpTransition),
@@ -34,6 +14,10 @@ pub enum Transition {
     SpecialChar(SpecialCharTransition),
     String(StringTransition),
     CharSet(CharSetTransition),
+    BackReference(BackReferenceTransition),
+    Assertion(AssertionTransition),
+    MatchStart(MatchStartTransition),
+    MatchEnd(MatchEndTransition),
 }
 
 impl Display for Transition {
@@ -44,7 +28,33 @@ impl Display for Transition {
             Transition::String(s) => write!(f, "{}", s),
             Transition::CharSet(c) => write!(f, "{}", c),
             Transition::SpecialChar(s) => write!(f, "{}", s),
+            Transition::BackReference(b) => write!(f, "{}", b),
+            Transition::Assertion(a) => write!(f, "{}", a),
+            Transition::MatchStart(m) => write!(f, "{}", m),
+            Transition::MatchEnd(m) => write!(f, "{}", m),
         }
+    }
+}
+
+trait TransitionTrait {
+    fn validated(&self, context: &Context) -> ValidateResult;
+
+    // Not all transitions have a fixed length, e.g.
+    // the length of "a{3,5}" varies, but the
+    // "a{3}" is 3.
+    //
+    // Returns `None` for a non-fixed length.
+    fn length(&self) -> Option<usize>;
+}
+
+pub struct ValidateResult {
+    success: bool,
+    forward: usize,
+}
+
+impl ValidateResult {
+    fn new(success: bool, forward: usize) -> Self {
+        ValidateResult { success, forward }
     }
 }
 
@@ -295,5 +305,109 @@ impl Display for CharSetTransition {
         } else {
             write!(f, "Charset [{}]", content)
         }
+    }
+}
+
+pub struct AssertionTransition {
+    name: AssertionName,
+}
+
+impl AssertionTransition {
+    pub fn new(name: AssertionName) -> Self {
+        AssertionTransition { name }
+    }
+}
+
+impl TransitionTrait for AssertionTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(0)
+    }
+}
+
+impl Display for AssertionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Assertion \"{}\"", self.name)
+    }
+}
+
+pub struct BackReferenceTransition {
+    match_index: usize,
+}
+
+impl BackReferenceTransition {
+    pub fn new(match_index: usize) -> Self {
+        BackReferenceTransition { match_index }
+    }
+}
+
+impl TransitionTrait for BackReferenceTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        None
+    }
+}
+
+impl Display for BackReferenceTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Back reference {{{}}}", self.match_index)
+    }
+}
+
+pub struct MatchStartTransition {
+    match_index: usize,
+}
+
+impl MatchStartTransition {
+    pub fn new(match_index: usize) -> Self {
+        MatchStartTransition { match_index }
+    }
+}
+
+impl TransitionTrait for MatchStartTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        todo!()
+    }
+}
+
+impl Display for MatchStartTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Match start {{{}}}", self.match_index)
+    }
+}
+
+pub struct MatchEndTransition {
+    match_index: usize,
+}
+
+impl MatchEndTransition {
+    pub fn new(match_index: usize) -> Self {
+        MatchEndTransition { match_index }
+    }
+}
+
+impl TransitionTrait for MatchEndTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        todo!()
+    }
+}
+
+impl Display for MatchEndTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Match end {{{}}}", self.match_index)
     }
 }

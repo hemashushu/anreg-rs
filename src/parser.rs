@@ -6,8 +6,8 @@
 
 use crate::{
     ast::{
-        CharRange, CharSet, CharSetElement, Expression, FunctionCall, FunctionCallArg,
-        FunctionName, Literal, Program,
+        AssertionName, CharRange, CharSet, CharSetElement, Expression, FunctionCall,
+        FunctionCallArg, FunctionName, Literal, PresetCharSetName, Program, SpecialCharName,
     },
     commentcleaner::clean,
     error::Error,
@@ -277,7 +277,20 @@ impl<'a> Parser<'a> {
                 | Token::QuestionLazy
                 | Token::PlusLazy
                 | Token::AsteriskLazy => {
-                    let name = function_name_from_notation_token(&token, &self.last_range)?;
+                    let name = match token {
+                        // Greedy quantifier
+                        Token::Question => FunctionName::Optional,
+                        Token::Plus => FunctionName::OneOrMore,
+                        Token::Asterisk => FunctionName::ZeroOrMore,
+
+                        // Lazy quantifier
+                        Token::QuestionLazy => FunctionName::OptionalLazy,
+                        Token::PlusLazy => FunctionName::OneOrMoreLazy,
+                        Token::AsteriskLazy => FunctionName::ZeroOrMoreLazy,
+
+                        _ => unreachable!(),
+                    };
+
                     let function_call = FunctionCall {
                         name,
                         expression: Box::new(left),
@@ -529,16 +542,18 @@ impl<'a> Parser<'a> {
                         // function call
                         self.parse_function_call()?
                     }
-                    Token::Identifier(id_ref) => {
+                    Token::Identifier(identifier_ref) => {
                         // identifier
-                        let id = id_ref.to_owned();
+                        let identifier = identifier_ref.to_owned();
                         self.next_token(); // consume identifier
-                        Expression::Identifier(id)
+                        Expression::Identifier(identifier)
                     }
-                    Token::Assertion(assertion_ref) => {
-                        let assertion = assertion_ref.to_owned();
+                    Token::Assertion(name_ref) => {
+                        // assertion
+                        let name = assertion_name_from_str(name_ref, &self.last_range)?;
                         self.next_token(); // consume assertion
-                        Expression::Assertion(assertion)
+
+                        Expression::Assertion(name)
                     }
                     _ => {
                         let literal = self.parse_literal()?;
@@ -678,8 +693,8 @@ impl<'a> Parser<'a> {
                             elements,
                         })
                     }
-                    Token::Char(c_ref) => {
-                        let c = *c_ref;
+                    Token::Char(char_ref) => {
+                        let c = *char_ref;
                         self.next_token(); // consume char
                         Literal::Char(c)
                     }
@@ -688,15 +703,19 @@ impl<'a> Parser<'a> {
                         self.next_token(); // consume string
                         Literal::String(string)
                     }
-                    Token::PresetCharSet(preset_charset_ref) => {
-                        let preset_charset = preset_charset_ref.to_owned();
+                    Token::PresetCharSet(preset_charset_name_ref) => {
+                        let preset_charset_name = preset_charset_name_from_str(
+                            preset_charset_name_ref,
+                            &self.last_range,
+                        )?;
                         self.next_token(); // consume preset charset
-                        Literal::PresetCharSet(preset_charset)
+                        Literal::PresetCharSet(preset_charset_name)
                     }
-                    Token::Special(special_ref) => {
-                        let special = special_ref.to_owned();
+                    Token::Special(special_char_name_ref) => {
+                        let special_char_name =
+                            special_char_name_from_str(special_char_name_ref, &self.last_range)?;
                         self.next_token(); // consume special
-                        Literal::Special(special)
+                        Literal::Special(special_char_name)
                     }
                     _ => {
                         return Err(Error::MessageWithLocation(
@@ -745,16 +764,16 @@ impl<'a> Parser<'a> {
                     self.next_token(); // consume char
                     elements.push(CharSetElement::Char(c));
                 }
-                Token::PresetCharSet(preset_charset_ref) => {
+                Token::PresetCharSet(preset_charset_name_ref) => {
                     // preset char set
-                    let preset_charset = preset_charset_ref.to_owned();
+                    let preset_charset_name =
+                        preset_charset_name_from_str(preset_charset_name_ref, &self.last_range)?;
                     self.next_token(); // consume preset charset
-                    elements.push(CharSetElement::PresetCharSet(preset_charset));
+                    elements.push(CharSetElement::PresetCharSet(preset_charset_name));
                 }
                 Token::LeftBracket => {
                     // custom char set
                     // such as ['a'..'f']
-                    // note that the negative-charset (e.g. !['0'..'7']) is not allowed.
                     let custom_charset_elements = self.parse_charset()?;
                     let custom_charset = CharSet {
                         negative: false,
@@ -809,6 +828,65 @@ enum NotationQuantifier {
     AtLeast(u32),
 }
 
+fn assertion_name_from_str(name_str: &str, range: &Location) -> Result<AssertionName, Error> {
+    let name = match name_str {
+        "start" => AssertionName::Start,
+        "end" => AssertionName::End,
+        "is_bound" => AssertionName::IsBound,
+        "is_not_bound" => AssertionName::IsNotBound,
+
+        // Unexpect
+        _ => {
+            return Err(Error::MessageWithLocation(
+                format!("Unexpect assertion name: \"{}\"", name_str),
+                range.to_owned(),
+            ))
+        }
+    };
+
+    Ok(name)
+}
+
+fn special_char_name_from_str(name_str: &str, range: &Location) -> Result<SpecialCharName, Error> {
+    let name = match name_str {
+        "char_any" => SpecialCharName::CharAny,
+
+        // Unexpect
+        _ => {
+            return Err(Error::MessageWithLocation(
+                format!("Unexpect special character name: \"{}\"", name_str),
+                range.to_owned(),
+            ))
+        }
+    };
+
+    Ok(name)
+}
+
+fn preset_charset_name_from_str(
+    name_str: &str,
+    range: &Location,
+) -> Result<PresetCharSetName, Error> {
+    let name = match name_str {
+        "char_word" => PresetCharSetName::CharWord,
+        "char_not_word" => PresetCharSetName::CharNotWord,
+        "char_space" => PresetCharSetName::CharSpace,
+        "char_not_space" => PresetCharSetName::CharNotSpace,
+        "char_digit" => PresetCharSetName::CharDigit,
+        "char_not_digit" => PresetCharSetName::CharNotDigit,
+
+        // Unexpect
+        _ => {
+            return Err(Error::MessageWithLocation(
+                format!("Unexpect preset charset name: \"{}\"", name_str),
+                range.to_owned(),
+            ))
+        }
+    };
+
+    Ok(name)
+}
+
 fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionName, Error> {
     let name = match name_str {
         // Greedy quantifier
@@ -835,39 +913,12 @@ fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionNa
 
         // Capture
         "name" => FunctionName::Name,
-        "capture" => FunctionName::Capture,
+        "index" => FunctionName::Index,
 
         // Unexpect
         _ => {
             return Err(Error::MessageWithLocation(
                 format!("Unexpect function name: \"{}\"", name_str),
-                range.to_owned(),
-            ))
-        }
-    };
-
-    Ok(name)
-}
-
-fn function_name_from_notation_token(
-    token: &Token,
-    range: &Location,
-) -> Result<FunctionName, Error> {
-    let name = match token {
-        // Greedy quantifier
-        Token::Question => FunctionName::Optional,
-        Token::Plus => FunctionName::OneOrMore,
-        Token::Asterisk => FunctionName::ZeroOrMore,
-
-        // Lazy quantifier
-        Token::QuestionLazy => FunctionName::OptionalLazy,
-        Token::PlusLazy => FunctionName::OneOrMoreLazy,
-        Token::AsteriskLazy => FunctionName::ZeroOrMoreLazy,
-
-        // Unexpect
-        _ => {
-            return Err(Error::MessageWithLocation(
-                "Expect a function name.".to_owned(),
                 range.to_owned(),
             ))
         }
@@ -893,7 +944,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use crate::ast::{CharRange, CharSet, CharSetElement, Expression, Literal, Program};
+    use crate::ast::{CharRange, CharSet, CharSetElement, Expression, Literal, PresetCharSetName, Program};
 
     use super::parse_from_str;
 
@@ -913,7 +964,7 @@ mod tests {
                 expressions: vec![
                     Expression::Literal(Literal::Char('a')),
                     Expression::Literal(Literal::String("foo".to_owned())),
-                    Expression::Literal(Literal::PresetCharSet("char_word".to_owned())),
+                    Expression::Literal(Literal::PresetCharSet(PresetCharSetName::CharWord)),
                 ]
             }
         );
@@ -942,7 +993,7 @@ mod tests {
                             start: '0',
                             end_included: '9'
                         }),
-                        CharSetElement::PresetCharSet("char_word".to_owned()),
+                        CharSetElement::PresetCharSet(PresetCharSetName::CharWord),
                     ]
                 })),]
             }

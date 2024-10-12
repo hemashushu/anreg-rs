@@ -15,15 +15,17 @@ pub struct Program {
 pub enum Expression {
     Literal(Literal),
     Identifier(String),
-    Assertion(String),
+    Assertion(AssertionName),
 
     /**
-     * the _group_ of ANREG is different from the _group_ of
-     * oridinary regular expressions.
-     * ANREG's group is just a series of patterns, which will not
-     * be captured unless enclosed by the function 'name' or 'capture'.
+     * the "group" of ANREG is different from the "group" of
+     * ordinary regular expressions.
+     * the "group" of ANREG is just a series of parenthesized patterns
+     * that are not captured unless called by the 'name' or 'index' function.
      * e.g.
-     * ANREG group `('a', 'b', char_word+)` is equivalent to oridinary regex `ab\w+`
+     * ANREG `('a', 'b', char_word+)` is equivalent to oridinary regex `ab\w+`
+     * the "group" of ANREG is used to group patterns and
+     * change operator precedence and associativity
      */
     Group(Vec<Expression>),
 
@@ -54,9 +56,9 @@ pub enum FunctionCallArg {
 pub enum Literal {
     Char(char),
     String(String),
-    Special(String),
+    Special(SpecialCharName),
     CharSet(CharSet),
-    PresetCharSet(String),
+    PresetCharSet(PresetCharSetName),
 }
 
 #[derive(Debug, PartialEq)]
@@ -69,8 +71,8 @@ pub struct CharSet {
 pub enum CharSetElement {
     Char(char),
     CharRange(CharRange),
-    PresetCharSet(String),
-    CharSet(Box<CharSet>)
+    PresetCharSet(PresetCharSetName), // only positive preset charsets are allowed
+    CharSet(Box<CharSet>),            // only positive custom charsets are allowed
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,9 +81,66 @@ pub struct CharRange {
     pub end_included: char,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum AssertionName {
+    Start,
+    End,
+    IsBound,
+    IsNotBound,
+}
+
+impl Display for AssertionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name_str = match self {
+            AssertionName::Start => "start",
+            AssertionName::End => "end",
+            AssertionName::IsBound => "is_bound",
+            AssertionName::IsNotBound => "is_not_bound",
+        };
+        f.write_str(name_str)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum PresetCharSetName {
+    CharWord,
+    CharNotWord,
+    CharDigit,
+    CharNotDigit,
+    CharSpace,
+    CharNotSpace,
+}
+
+impl Display for PresetCharSetName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name_str = match self {
+            PresetCharSetName::CharWord => "char_word",
+            PresetCharSetName::CharNotWord => "char_not_word",
+            PresetCharSetName::CharDigit => "char_digit",
+            PresetCharSetName::CharNotDigit => "char_not_digit",
+            PresetCharSetName::CharSpace => "char_space",
+            PresetCharSetName::CharNotSpace => "char_not_space",
+        };
+        f.write_str(name_str)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum SpecialCharName {
+    CharAny,
+}
+
+impl Display for SpecialCharName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpecialCharName::CharAny => f.write_str("char_any"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum FunctionName {
-    // Greedy quantifier
+    // Greedy Quantifier
     Optional,
     OneOrMore,
     ZeroOrMore,
@@ -89,7 +148,7 @@ pub enum FunctionName {
     RepeatRange,
     AtLeast,
 
-    // Lazy quantifier
+    // Lazy Quantifier
     OptionalLazy,
     OneOrMoreLazy,
     ZeroOrMoreLazy,
@@ -103,9 +162,9 @@ pub enum FunctionName {
     IsNotBefore, // negative lookahead
     IsNotAfter,  // negative lookbehind
 
-    // Capture
+    // Capture/Match
     Name,
-    Capture,
+    Index,
 }
 
 impl Display for FunctionName {
@@ -128,7 +187,7 @@ impl Display for FunctionName {
             FunctionName::IsNotBefore => f.write_str("is_not_before"),
             FunctionName::IsNotAfter => f.write_str("is_not_after"),
             FunctionName::Name => f.write_str("name"),
-            FunctionName::Capture => f.write_str("capture"),
+            FunctionName::Index => f.write_str("capture"),
         }
     }
 }
@@ -144,7 +203,7 @@ impl Display for CharSetElement {
         match self {
             CharSetElement::Char(c) => write!(f, "'{}'", c),
             CharSetElement::CharRange(c) => write!(f, "{}", c),
-            CharSetElement::PresetCharSet(p) => f.write_str(p),
+            CharSetElement::PresetCharSet(p) => write!(f, "{}", p),
             CharSetElement::CharSet(c) => write!(f, "{}", c),
         }
     }
@@ -167,7 +226,7 @@ impl Display for Literal {
             Literal::Char(c) => write!(f, "'{}'", c),
             Literal::String(s) => write!(f, "\"{}\"", s),
             Literal::CharSet(c) => write!(f, "{}", c),
-            Literal::PresetCharSet(p) => f.write_str(p),
+            Literal::PresetCharSet(p) => write!(f, "{}", p),
             Literal::Special(s) => write!(f, "{}", s),
         }
     }
@@ -197,14 +256,14 @@ impl Display for FunctionCall {
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Literal(l) => write!(f, "{}", l),
-            Expression::Identifier(id) => f.write_str(id),
-            Expression::Assertion(s) => f.write_str(s),
-            Expression::Group(g) => {
-                let s: Vec<String> = g.iter().map(|e| e.to_string()).collect();
-                write!(f, "({})", s.join(", "))
+            Expression::Literal(literal) => write!(f, "{}", literal),
+            Expression::Identifier(identifier) => f.write_str(identifier),
+            Expression::Assertion(name) => write!(f, "{}", name),
+            Expression::Group(expressions) => {
+                let lines: Vec<String> = expressions.iter().map(|e| e.to_string()).collect();
+                write!(f, "({})", lines.join(", "))
             }
-            Expression::FunctionCall(fc) => write!(f, "{}", fc),
+            Expression::FunctionCall(function_call) => write!(f, "{}", function_call),
             Expression::Or(left, right) => write!(f, "{} || {}", left, right),
         }
     }
