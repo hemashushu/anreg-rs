@@ -6,27 +6,40 @@
 
 use crate::transition::Transition;
 
-// state set --\
-//             |-- state node --\
-//             |                |- link head --> transition
-//             |                |- link node --> transition
-//             |                |- ...
-//             |                \- link tail --> transition
-//             |-- state node
-//             |-- ...
-//             |-- state node
+// image
+// |-- state set --\
+// |            |-- state node --\
+// |            |                |- link head --> transition
+// |            |                |- link node --> transition
+// |            |                |- ...
+// |            |                \- link tail --> transition
+// |            |-- state node
+// |            |-- ...
+// |            |-- state node
+// |
+// |-- state set
+
+pub struct Image {
+    statesets: Vec<StateSet>,
+    matches: Vec<Match>,
+}
 
 pub struct StateSet {
+    states: Vec<StateNode>,
     pub start_node_index: usize,
     pub end_node_index: usize,
-    states: Vec<StateNode>,
+
+    // it is true when the expression starts with `^`, or encounters is_after and is_before
+    pub fixed_start: bool,
+
+    // it is true when the expression ends with `$`, or encounters is_after
+    pub fixed_end: bool,
 
     /*
      * object references
      */
     links: Vec<LinkNode>,
     transitions: Vec<TransitionNode>,
-    matches: Vec<Match>,
 }
 
 // Every state node has one or more transitions.
@@ -50,23 +63,99 @@ struct Match {
     name: Option<String>,
 }
 
-impl StateSet {
+impl Image {
     pub fn new() -> Self {
-        StateSet {
-            start_node_index: 0,
-            end_node_index: 0,
-            states: vec![],
-            links: vec![],
-            transitions: vec![],
+        Image {
+            statesets: vec![],
             matches: vec![],
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.states.is_empty()
+    pub fn new_stateset(&mut self) -> usize {
+        let stateset = StateSet {
+            states: vec![],
+            start_node_index: 0,
+            end_node_index: 0,
+            fixed_start: false,
+            fixed_end: false,
+            links: vec![],
+            transitions: vec![],
+        };
+
+        let idx = self.statesets.len();
+        self.statesets.push(stateset);
+        idx
     }
 
-    // return the index of the new state node
+    pub fn get_stateset_ref_mut(&mut self, idx: usize) -> &mut StateSet {
+        &mut self.statesets[idx]
+    }
+
+    pub fn new_match(&mut self, name: Option<String>) -> usize {
+        let idx = self.matches.len();
+        self.matches.push(Match { name });
+        idx
+    }
+
+    pub fn find_match_index(&self, name: &str) -> Option<usize> {
+        self.matches.iter().position(|e| match &e.name {
+            Some(n) => n == name,
+            None => false,
+        })
+    }
+
+    // for debug
+    pub fn get_image_text_verbose(&self) -> String {
+        let mut lines = vec![];
+        if self.statesets.len() == 1 {
+            lines.push(self.statesets[0].get_stateset_text_verbose());
+        } else {
+            for (stateset_index, stateset) in self.statesets.iter().enumerate() {
+                lines.push(format!("stateset: ${}", stateset_index));
+                lines.push(stateset.get_stateset_text_verbose());
+            }
+        }
+
+        // matches
+        for (match_index, m) in self.matches.iter().enumerate() {
+            let match_line = if let Some(n) = &m.name {
+                format!("# group {{idx:{}}}, {}", match_index, n)
+            } else {
+                format!("# group {{idx:{}}}", match_index)
+            };
+            lines.push(match_line);
+        }
+
+        lines.join("\n")
+    }
+
+    // for debug
+    pub fn get_image_text(&self) -> String {
+        let mut lines = vec![];
+        if self.statesets.len() == 1 {
+            lines.push(self.statesets[0].get_stateset_text());
+        } else {
+            for (stateset_index, stateset) in self.statesets.iter().enumerate() {
+                lines.push(format!("stateset: ${}", stateset_index));
+                lines.push(stateset.get_stateset_text());
+            }
+        }
+
+        // matches
+        for (match_index, m) in self.matches.iter().enumerate() {
+            let match_line = if let Some(n) = &m.name {
+                format!("# {{{}}}, {}", match_index, n)
+            } else {
+                format!("# {{{}}}", match_index)
+            };
+            lines.push(match_line);
+        }
+
+        lines.join("\n")
+    }
+}
+
+impl StateSet {
     pub fn new_state(&mut self) -> usize {
         let state = StateNode {
             link_head_index: None,
@@ -74,6 +163,8 @@ impl StateSet {
         };
         let idx = self.states.len();
         self.states.push(state);
+
+        // return the index of the new state node
         idx
     }
 
@@ -181,34 +272,8 @@ impl StateSet {
         }
     }
 
-    pub fn new_match(&mut self, name: Option<String>) -> usize {
-        let idx = self.matches.len();
-        self.matches.push(Match { name });
-        idx
-    }
-
-    pub fn find_match_index(&self, name: &str) -> Option<usize> {
-        self.matches.iter().position(|e| match &e.name {
-            Some(n) => n == name,
-            None => false,
-        })
-    }
-
     // for debug
-    //     pub fn get_transition_index_list(&self, source_state_index: usize) -> Vec<usize> {
-    //         let mut indices = vec![];
-    //         let mut next_index = self.states[source_state_index].link_head_index;
-    //
-    //         while let Some(idx) = next_index {
-    //             indices.push(idx);
-    //             next_index = self.links[idx].next_index;
-    //         }
-    //
-    //         indices
-    //     }
-
-    // for debug
-    pub fn print_text_verbose(&self) -> String {
+    pub fn get_stateset_text_verbose(&self) -> String {
         let mut lines = vec![];
 
         // states and transitions
@@ -255,21 +320,11 @@ impl StateSet {
             }
         }
 
-        // groups
-        for (match_index, m) in self.matches.iter().enumerate() {
-            let match_line = if let Some(n) = &m.name {
-                format!("# group {{idx:{}}}, {}", match_index, n)
-            } else {
-                format!("# group {{idx:{}}}", match_index)
-            };
-            lines.push(match_line);
-        }
-
         lines.join("\n")
     }
 
     // for debug
-    pub fn print_text(&self) -> String {
+    pub fn get_stateset_text(&self) -> String {
         let mut lines = vec![];
 
         // states and transitions
@@ -302,16 +357,6 @@ impl StateSet {
             }
         }
 
-        // groups
-        for (match_index, m) in self.matches.iter().enumerate() {
-            let match_line = if let Some(n) = &m.name {
-                format!("# {{{}}}, {}", match_index, n)
-            } else {
-                format!("# {{{}}}", match_index)
-            };
-            lines.push(match_line);
-        }
-
         lines.join("\n")
     }
 }
@@ -330,60 +375,89 @@ impl StateNode {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::transition::{CharTransition, Transition};
-
-    use super::StateSet;
+    use crate::{
+        image::Image,
+        transition::{CharTransition, Transition},
+    };
 
     #[test]
-    fn test_state_set() {
-        let mut state_set = StateSet::new();
-        assert!(state_set.is_empty());
+    fn test_image_new_stateset() {
+        let mut image = Image::new();
 
-        // create a state
-        state_set.new_state();
+        // create a stateset
+        {
+            let stateset_index = image.new_stateset();
+            let stateset = image.get_stateset_ref_mut(stateset_index);
 
-        assert!(!state_set.is_empty());
-        assert_str_eq!(
-            state_set.print_text_verbose(),
-            "\
+            // create a state
+            stateset.new_state();
+
+            assert_str_eq!(
+                stateset.get_stateset_text_verbose(),
+                "\
 > state <idx:0>, head:None, tail:None"
-        );
+            );
 
-        // create other states
-        let idx1 = state_set.new_state();
-        state_set.new_state();
-        let idx2 = state_set.new_state();
+            // create other states
+            let idx1 = stateset.new_state();
+            stateset.new_state();
+            let idx2 = stateset.new_state();
 
-        state_set.start_node_index = idx1;
-        state_set.end_node_index = idx2;
+            stateset.start_node_index = idx1;
+            stateset.end_node_index = idx2;
 
-        assert_str_eq!(
-            state_set.print_text_verbose(),
-            "\
+            assert_str_eq!(
+                stateset.get_stateset_text_verbose(),
+                "\
 - state <idx:0>, head:None, tail:None
 > state <idx:1>, head:None, tail:None
 - state <idx:2>, head:None, tail:None
 < state <idx:3>, head:None, tail:None"
-        );
+            );
+        }
+
+        // create another stateset
+        {
+            let stateset_index = image.new_stateset();
+            let stateset = image.get_stateset_ref_mut(stateset_index);
+
+            // create a state
+            stateset.new_state();
+
+            assert_str_eq!(
+                image.get_image_text_verbose(),
+                "\
+stateset: $0
+- state <idx:0>, head:None, tail:None
+> state <idx:1>, head:None, tail:None
+- state <idx:2>, head:None, tail:None
+< state <idx:3>, head:None, tail:None
+stateset: $1
+> state <idx:0>, head:None, tail:None"
+            );
+        }
     }
 
     #[test]
-    fn test_state_transition_append() {
-        let mut state_set = StateSet::new();
-        let state_idx0 = state_set.new_state();
-        let state_idx1 = state_set.new_state();
-        let state_idx2 = state_set.new_state();
-        let state_idx3 = state_set.new_state();
-        let state_idx4 = state_set.new_state();
+    fn test_stateset_transition_append() {
+        let mut image = Image::new();
+        let stateset_index = image.new_stateset();
+        let stateset = image.get_stateset_ref_mut(stateset_index);
 
-        state_set.append_transition(
+        let state_idx0 = stateset.new_state();
+        let state_idx1 = stateset.new_state();
+        let state_idx2 = stateset.new_state();
+        let state_idx3 = stateset.new_state();
+        let state_idx4 = stateset.new_state();
+
+        stateset.append_transition(
             state_idx0,
             state_idx1,
             Transition::Char(CharTransition::new('a')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(0)
   * link (0), prev:None, next:None
@@ -394,20 +468,20 @@ mod tests {
 - state <idx:4>, head:None, tail:None"
         );
 
-        state_set.append_transition(
+        stateset.append_transition(
             state_idx0,
             state_idx2,
             Transition::Char(CharTransition::new('b')),
         );
 
-        state_set.append_transition(
+        stateset.append_transition(
             state_idx0,
             state_idx3,
             Transition::Char(CharTransition::new('c')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(2)
   * link (0), prev:None, next:Some(1)
@@ -422,14 +496,14 @@ mod tests {
 - state <idx:4>, head:None, tail:None"
         );
 
-        state_set.insert_transition(
+        stateset.insert_transition(
             state_idx0,
             state_idx4,
             Transition::Char(CharTransition::new('d')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(3), tail:Some(2)
   * link (3), prev:None, next:Some(0)
@@ -448,22 +522,25 @@ mod tests {
     }
 
     #[test]
-    fn test_state_transition_insert() {
-        let mut state_set = StateSet::new();
-        let state_idx0 = state_set.new_state();
-        let state_idx1 = state_set.new_state();
-        let state_idx2 = state_set.new_state();
-        let state_idx3 = state_set.new_state();
-        let state_idx4 = state_set.new_state();
+    fn test_stateset_transition_insert() {
+        let mut image = Image::new();
+        let stateset_index = image.new_stateset();
+        let stateset = image.get_stateset_ref_mut(stateset_index);
 
-        state_set.insert_transition(
+        let state_idx0 = stateset.new_state();
+        let state_idx1 = stateset.new_state();
+        let state_idx2 = stateset.new_state();
+        let state_idx3 = stateset.new_state();
+        let state_idx4 = stateset.new_state();
+
+        stateset.insert_transition(
             state_idx0,
             state_idx1,
             Transition::Char(CharTransition::new('a')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(0), tail:Some(0)
   * link (0), prev:None, next:None
@@ -474,20 +551,20 @@ mod tests {
 - state <idx:4>, head:None, tail:None"
         );
 
-        state_set.insert_transition(
+        stateset.insert_transition(
             state_idx0,
             state_idx2,
             Transition::Char(CharTransition::new('b')),
         );
 
-        state_set.insert_transition(
+        stateset.insert_transition(
             state_idx0,
             state_idx3,
             Transition::Char(CharTransition::new('c')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(2), tail:Some(0)
   * link (2), prev:None, next:Some(1)
@@ -502,14 +579,14 @@ mod tests {
 - state <idx:4>, head:None, tail:None"
         );
 
-        state_set.append_transition(
+        stateset.append_transition(
             state_idx0,
             state_idx4,
             Transition::Char(CharTransition::new('d')),
         );
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            stateset.get_stateset_text_verbose(),
             "\
 > state <idx:0>, head:Some(2), tail:Some(3)
   * link (2), prev:None, next:Some(1)
@@ -528,17 +605,20 @@ mod tests {
     }
 
     #[test]
-    fn test_state_match_append() {
-        let mut state_set = StateSet::new();
-        state_set.new_state();
-        state_set.new_state();
+    fn test_image_match_append() {
+        let mut image = Image::new();
+        let stateset_index = image.new_stateset();
+        let stateset = image.get_stateset_ref_mut(stateset_index);
 
-        state_set.new_match(None);
-        state_set.new_match(Some("foo".to_owned()));
-        state_set.new_match(None);
+        stateset.new_state();
+        stateset.new_state();
+
+        image.new_match(None);
+        image.new_match(Some("foo".to_owned()));
+        image.new_match(None);
 
         assert_str_eq!(
-            state_set.print_text_verbose(),
+            image.get_image_text_verbose(),
             "\
 > state <idx:0>, head:None, tail:None
 - state <idx:1>, head:None, tail:None
@@ -547,7 +627,7 @@ mod tests {
 # group {idx:2}"
         );
 
-        assert_eq!(state_set.find_match_index("foo"), Some(1));
-        assert!(state_set.find_match_index("bar").is_none());
+        assert_eq!(image.find_match_index("foo"), Some(1));
+        assert!(image.find_match_index("bar").is_none());
     }
 }

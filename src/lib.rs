@@ -17,7 +17,7 @@ mod macroexpander;
 mod normalizer;
 mod parser;
 mod peekableiter;
-mod state;
+mod image;
 mod token;
 mod transition;
 

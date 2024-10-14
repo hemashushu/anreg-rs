@@ -7,8 +7,7 @@
 pub struct Context {
     pub text: Vec<char>,      // the source text
     pub length: usize,        // the length of source text
-    pub fixed_start: bool,    // it is true when the expression starts with `^`
-    pub fixed_end: bool,      // it is true when the expression ends with `$`
+
     pub cursors: Vec<Cursor>, // the `Cursor` stack.
     pub position: usize,      // it is sync to the position of the last cursor
     pub results: Vec<Result>, // the results of matches

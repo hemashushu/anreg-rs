@@ -4,14 +4,16 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+use std::usize;
+
 use crate::{
     ast::{
         AssertionName, CharRange, CharSet, CharSetElement, Expression, FunctionCall,
         FunctionCallArg, FunctionName, Literal, PresetCharSetName, Program,
     },
     error::Error,
+    image::{Image, StateSet},
     parser::parse_from_str,
-    state::StateSet,
     transition::{
         add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
         AssertionTransition, BackReferenceTransition, CharSetItem, CharSetTransition,
@@ -20,27 +22,43 @@ use crate::{
     },
 };
 
-pub fn compile(program: &Program) -> Result<StateSet, Error> {
-    let mut state_set = StateSet::new();
-    let mut compiler = Compiler::new(program, &mut state_set);
+pub fn compile(program: &Program) -> Result<Image, Error> {
+    let mut image = Image::new();
+    let stateset_index = image.new_stateset();
+
+    let mut compiler = Compiler::new(program, &mut image, stateset_index);
     compiler.compile()?;
 
-    Ok(state_set)
+    Ok(image)
 }
 
-pub fn compile_from_str(s: &str) -> Result<StateSet, Error> {
+pub fn compile_from_str(s: &str) -> Result<Image, Error> {
     let program = parse_from_str(s)?;
     compile(&program)
 }
 
 pub struct Compiler<'a> {
     program: &'a Program,
-    state_set: &'a mut StateSet,
+    // stateset: &'a mut StateSet,
+    image: &'a mut Image,
+    stateset_index: usize, // index of the current stateset
 }
 
 impl<'a> Compiler<'a> {
-    fn new(program: &'a Program, state_set: &'a mut StateSet) -> Self {
-        Compiler { program, state_set }
+    fn new(
+        program: &'a Program,
+        /* stateset: &'a mut StateSet*/ image: &'a mut Image,
+        stateset_index: usize,
+    ) -> Self {
+        Compiler {
+            program,
+            image,
+            stateset_index,
+        }
+    }
+
+    fn get_current_stateset(&mut self) -> &mut StateSet {
+        self.image.get_stateset_ref_mut(self.stateset_index)
     }
 
     fn compile(&mut self) -> Result<(), Error> {
@@ -52,15 +70,19 @@ impl<'a> Compiler<'a> {
         // in addition, there may be the 'start' and 'end' assertions.
 
         // create the index 0 match for the program
-        let match_index = self.state_set.new_match(None);
+        let match_index = self.image.new_match(None);
 
         let expressions = &program.expressions;
 
+        let mut fixed_start = false;
+        let mut fixed_end = false;
         let mut ports = vec![];
+
         for (expression_index, expression) in expressions.iter().enumerate() {
             if matches!(expression, Expression::Assertion(AssertionName::Start)) {
                 if expression_index == 0 {
-                    // skips the 'start' assertion if it is present.
+                    // skips the 'start' assertion emitting.
+                    fixed_start = true;
                 } else {
                     return Err(Error::Message(
                         "The assertion \"start\" can only be present at the beginning of expression."
@@ -69,7 +91,8 @@ impl<'a> Compiler<'a> {
                 }
             } else if matches!(expression, Expression::Assertion(AssertionName::End)) {
                 if expression_index == expressions.len() - 1 {
-                    // skips the 'end' assertion if it is present.
+                    // skips the 'end' assertion emitting.
+                    fixed_end = true;
                 } else {
                     return Err(Error::Message(
                         "The assertion \"end\" can only be present at the end of expression."
@@ -81,8 +104,10 @@ impl<'a> Compiler<'a> {
             }
         }
 
+        let stateset = self.get_current_stateset();
+
         let program_port = if ports.is_empty() {
-            // todo: empty expression
+            // empty expression
             Port::new(0, 0)
         } else if ports.len() == 1 {
             // eliminates the nested group, e.g. '(((...)))'
@@ -92,7 +117,7 @@ impl<'a> Compiler<'a> {
                 let current_out_state_index = ports[idx].out_state_index;
                 let next_in_state_index = ports[idx + 1].in_state_index;
                 let transition = Transition::Jump(JumpTransition);
-                self.state_set.append_transition(
+                stateset.append_transition(
                     current_out_state_index,
                     next_in_state_index,
                     transition,
@@ -111,19 +136,19 @@ impl<'a> Compiler<'a> {
         //                           \-----------/
         //
 
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let match_start_transition = MatchStartTransition::new(match_index);
         let match_end_transition = MatchEndTransition::new(match_index);
 
-        self.state_set.append_transition(
+        stateset.append_transition(
             in_state_index,
             program_port.in_state_index,
             Transition::MatchStart(match_start_transition),
         );
 
-        self.state_set.append_transition(
+        stateset.append_transition(
             program_port.out_state_index,
             out_state_index,
             Transition::MatchEnd(match_end_transition),
@@ -132,8 +157,10 @@ impl<'a> Compiler<'a> {
         let match_port = Port::new(in_state_index, out_state_index);
 
         // save the program ports
-        self.state_set.start_node_index = match_port.in_state_index;
-        self.state_set.end_node_index = match_port.out_state_index;
+        stateset.start_node_index = match_port.in_state_index;
+        stateset.end_node_index = match_port.out_state_index;
+        stateset.fixed_start = fixed_start;
+        stateset.fixed_end = fixed_end;
 
         Ok(())
     }
@@ -169,29 +196,28 @@ impl<'a> Compiler<'a> {
             ports.push(self.emit_expression(expression)?);
         }
 
-        if ports.len() == 1 {
+        let port = if ports.len() == 1 {
             // eliminates the nested group, e.g. '(((...)))'
-            let result = ports.pop().unwrap();
-            Ok(result)
+            ports.pop().unwrap()
         } else {
             for idx in 0..(ports.len() - 1) {
                 let current_out_state_index = ports[idx].out_state_index;
                 let next_in_state_index = ports[idx + 1].in_state_index;
                 let transition = Transition::Jump(JumpTransition);
-                self.state_set.append_transition(
+                self.get_current_stateset().append_transition(
                     current_out_state_index,
                     next_in_state_index,
                     transition,
                 );
             }
 
-            let result = Port::new(
+            Port::new(
                 ports.first().unwrap().in_state_index,
                 ports.last().unwrap().out_state_index,
-            );
+            )
+        };
 
-            Ok(result)
-        }
+        Ok(port)
     }
 
     fn emit_logic_or(&mut self, left: &Expression, right: &Expression) -> Result<Port, Error> {
@@ -205,32 +231,34 @@ impl<'a> Compiler<'a> {
         //      \==jump==--o in  out o--==jump==/
         //                \-----------/
 
-        let left_result = self.emit_expression(left)?;
-        let right_result = self.emit_expression(right)?;
+        let left_port = self.emit_expression(left)?;
+        let right_port = self.emit_expression(right)?;
 
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
 
-        self.state_set.append_transition(
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
+        stateset.append_transition(
             in_state_index,
-            left_result.in_state_index,
+            left_port.in_state_index,
             Transition::Jump(JumpTransition),
         );
 
-        self.state_set.append_transition(
+        stateset.append_transition(
             in_state_index,
-            right_result.in_state_index,
+            right_port.in_state_index,
             Transition::Jump(JumpTransition),
         );
 
-        self.state_set.append_transition(
-            left_result.out_state_index,
+        stateset.append_transition(
+            left_port.out_state_index,
             out_state_index,
             Transition::Jump(JumpTransition),
         );
 
-        self.state_set.append_transition(
-            right_result.out_state_index,
+        stateset.append_transition(
+            right_port.out_state_index,
             out_state_index,
             Transition::Jump(JumpTransition),
         );
@@ -239,32 +267,108 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_function_call(&mut self, function_call: &FunctionCall) -> Result<Port, Error> {
+        let expression = &function_call.expression;
+        let args = &function_call.args;
+
         match &function_call.name {
-            FunctionName::Optional => todo!(),
-            FunctionName::OneOrMore => todo!(),
-            FunctionName::ZeroOrMore => todo!(),
-            FunctionName::Repeat => todo!(),
-            FunctionName::RepeatRange => todo!(),
-            FunctionName::AtLeast => todo!(),
-            FunctionName::OptionalLazy => todo!(),
-            FunctionName::OneOrMoreLazy => todo!(),
-            FunctionName::ZeroOrMoreLazy => todo!(),
-            FunctionName::RepeatLazy => todo!(),
-            FunctionName::RepeatRangeLazy => todo!(),
-            FunctionName::AtLeastLazy => todo!(),
+            // Greedy Quantifier
+            FunctionName::Optional => {
+                self.emit_function_call_quantifier(expression, true, 0, 1, false)
+            }
+            FunctionName::OneOrMore => {
+                self.emit_function_call_quantifier(expression, false, 1, usize::MAX, false)
+            }
+            FunctionName::ZeroOrMore => {
+                self.emit_function_call_quantifier(expression, false, 0, usize::MAX, false)
+            }
+            FunctionName::Repeat => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+                self.emit_function_call_quantifier(expression, true, from, from, false)
+            }
+            FunctionName::RepeatRange => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+
+                let to = if let FunctionCallArg::Number(n) = &args[1] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+
+                self.emit_function_call_quantifier(expression, false, from, to, false)
+            }
+            FunctionName::AtLeast => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+                self.emit_function_call_quantifier(expression, false, from, from, false)
+            }
+
+            // Lazy Quantifier
+            FunctionName::OptionalLazy => {
+                self.emit_function_call_quantifier(expression, true, 0, 1, true)
+            }
+            FunctionName::OneOrMoreLazy => {
+                self.emit_function_call_quantifier(expression, false, 1, usize::MAX, true)
+            }
+            FunctionName::ZeroOrMoreLazy => {
+                self.emit_function_call_quantifier(expression, false, 0, usize::MAX, true)
+            }
+            FunctionName::RepeatLazy => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+                self.emit_function_call_quantifier(expression, true, from, from, true)
+            }
+            FunctionName::RepeatRangeLazy => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+
+                let to = if let FunctionCallArg::Number(n) = &args[1] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+
+                self.emit_function_call_quantifier(expression, false, from, to, true)
+            }
+            FunctionName::AtLeastLazy => {
+                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                    *n
+                } else {
+                    unreachable!()
+                };
+                self.emit_function_call_quantifier(expression, false, from, from, true)
+            }
+
+            // Assertions
             FunctionName::IsBefore => todo!(),
             FunctionName::IsAfter => todo!(),
             FunctionName::IsNotBefore => todo!(),
             FunctionName::IsNotAfter => todo!(),
-            FunctionName::Name => {
-                self.emit_function_call_name(&function_call.expression, &function_call.args)
-            }
-            FunctionName::Index => self.emit_function_call_index(&function_call.expression),
+
+            // Capture
+            FunctionName::Name => self.emit_function_call_name(expression, args),
+            FunctionName::Index => self.emit_function_call_index(expression),
         }
     }
 
     fn emit_literal(&mut self, literal: &Literal) -> Result<Port, Error> {
-        let result = match literal {
+        let port = match literal {
             Literal::Char(character) => self.emit_literal_char(*character)?,
             Literal::String(s) => self.emit_literal_string(s)?,
             Literal::CharSet(charset) => self.emit_literal_charset(charset)?,
@@ -272,42 +376,43 @@ impl<'a> Compiler<'a> {
             Literal::Special(_) => self.emit_literal_special_char()?,
         };
 
-        Ok(result)
+        Ok(port)
     }
 
     fn emit_literal_char(&mut self, character: char) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let transition = Transition::Char(CharTransition::new(character));
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
     fn emit_literal_special_char(&mut self) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let transition = Transition::SpecialChar(SpecialCharTransition);
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
     fn emit_literal_string(&mut self, s: &str) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let transition = Transition::String(StringTransition::new(s));
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
     fn emit_literal_preset_charset(&mut self, name: &PresetCharSetName) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let charset_transition = match name {
             PresetCharSetName::CharWord => CharSetTransition::new_preset_word(),
@@ -319,22 +424,21 @@ impl<'a> Compiler<'a> {
         };
 
         let transition = Transition::CharSet(charset_transition);
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
     fn emit_literal_charset(&mut self, charset: &CharSet) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let mut items: Vec<CharSetItem> = vec![];
         Compiler::append_charset(charset, &mut items)?;
 
         let charset_transition = CharSetTransition::new(items, charset.negative);
         let transition = Transition::CharSet(charset_transition);
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
@@ -385,22 +489,19 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_assertion(&mut self, name: &AssertionName) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let assertion_transition = AssertionTransition::new(*name);
 
         let transition = Transition::Assertion(assertion_transition);
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
     fn emit_backreference(&mut self, name: &str) -> Result<Port, Error> {
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
-
-        let match_index_option = self.state_set.find_match_index(name);
+        let match_index_option = self.image.find_match_index(name);
         let match_index = if let Some(i) = match_index_option {
             i
         } else {
@@ -410,9 +511,13 @@ impl<'a> Compiler<'a> {
             )));
         };
 
+        let stateset = self.get_current_stateset();
+
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
         let transition = Transition::BackReference(BackReferenceTransition::new(match_index));
-        self.state_set
-            .append_transition(in_state_index, out_state_index, transition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
@@ -439,7 +544,7 @@ impl<'a> Compiler<'a> {
         expression: &Expression,
         name_option: Option<String>,
     ) -> Result<Port, Error> {
-        let match_index = self.state_set.new_match(name_option);
+        let match_index = self.image.new_match(name_option);
         let port = self.emit_expression(expression)?;
 
         //                              current
@@ -448,25 +553,37 @@ impl<'a> Compiler<'a> {
         //                           \-----------/
         //
 
-        let in_state_index = self.state_set.new_state();
-        let out_state_index = self.state_set.new_state();
+        let stateset = self.get_current_stateset();
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
 
         let match_start_transition = MatchStartTransition::new(match_index);
         let match_end_transition = MatchEndTransition::new(match_index);
 
-        self.state_set.append_transition(
+        stateset.append_transition(
             in_state_index,
             port.in_state_index,
             Transition::MatchStart(match_start_transition),
         );
 
-        self.state_set.append_transition(
+        stateset.append_transition(
             port.out_state_index,
             out_state_index,
             Transition::MatchEnd(match_end_transition),
         );
 
         Ok(Port::new(in_state_index, out_state_index))
+    }
+
+    fn emit_function_call_quantifier(
+        &mut self,
+        expression: &Expression,
+        is_fixed: bool,
+        from: usize,
+        to: usize,
+        is_lazy: bool,
+    ) -> Result<Port, Error> {
+        todo!()
     }
 }
 
@@ -496,8 +613,8 @@ mod tests {
     fn test_compile_char() {
         // single char
         {
-            let state_set = compile_from_str(r#"'a'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -515,8 +632,8 @@ mod tests {
 
         // sequence chars
         {
-            let state_set = compile_from_str(r#"'a', 'b', 'c'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a', 'b', 'c'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -544,8 +661,8 @@ mod tests {
         // note: the group of anreg is different from traditional regex, it is
         // only a sequence pattern.
         {
-            let state_set = compile_from_str(r#"'a',('b','c'), 'd'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a',('b','c'), 'd'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -575,8 +692,8 @@ mod tests {
 
         // nested groups
         {
-            let state_set = compile_from_str(r#"'a',('b', ('c', 'd'), 'e'), 'f'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a',('b', ('c', 'd'), 'e'), 'f'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -617,8 +734,8 @@ mod tests {
     fn test_compile_logic_or() {
         // two operands
         {
-            let state_set = compile_from_str(r#"'a' || 'b'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a' || 'b'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -648,8 +765,8 @@ mod tests {
         // the current interpreter is right-associative, so:
         // "'a' || 'b' || 'c'" => "'a' || ('b' || 'c')"
         {
-            let state_set = compile_from_str(r#"'a' || 'b' || 'c'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a' || 'b' || 'c'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -685,8 +802,8 @@ mod tests {
 
         // use "group" to change associativity
         {
-            let state_set = compile_from_str(r#"('a' || 'b') || 'c'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"('a' || 'b') || 'c'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -724,8 +841,8 @@ mod tests {
         // "||" is higher than ","
         // "'a', 'b' || 'c', 'd'" => "'a', ('b' || 'c'), 'd'"
         {
-            let state_set = compile_from_str(r#"'a', 'b' || 'c', 'd'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a', 'b' || 'c', 'd'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -760,8 +877,8 @@ mod tests {
 
         // use "group" to change precedence
         {
-            let state_set = compile_from_str(r#"('a', 'b') || 'c'"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"('a', 'b') || 'c'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -794,8 +911,8 @@ mod tests {
     #[test]
     fn test_compile_special_char() {
         {
-            let state_set = compile_from_str(r#"'a', char_any"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a', char_any"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -820,8 +937,8 @@ mod tests {
     fn test_compile_preset_charset() {
         // positive preset charset
         {
-            let state_set = compile_from_str(r#"'a', char_word, char_space, char_digit"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a', char_word, char_space, char_digit"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -850,9 +967,9 @@ mod tests {
 
         // negative preset charset
         {
-            let state_set =
+            let image =
                 compile_from_str(r#"'a', char_not_word, char_not_space, char_not_digit"#).unwrap();
-            let s = state_set.print_text();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -884,8 +1001,8 @@ mod tests {
     fn test_compile_charset() {
         // build with char and range
         {
-            let state_set = compile_from_str(r#"['a', '0'..'7']"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"['a', '0'..'7']"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -903,8 +1020,8 @@ mod tests {
 
         // negative charset
         {
-            let state_set = compile_from_str(r#"!['a','0'..'7']"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"!['a','0'..'7']"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -922,8 +1039,8 @@ mod tests {
 
         // build with preset charset
         {
-            let state_set = compile_from_str(r#"[char_word, char_space]"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"[char_word, char_space]"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -940,8 +1057,8 @@ mod tests {
 
         // nested charset
         {
-            let state_set = compile_from_str(r#"['a', ['x'..'z']]"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"['a', ['x'..'z']]"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -959,9 +1076,9 @@ mod tests {
 
         // deep nested charset
         {
-            let state_set =
+            let image =
                 compile_from_str(r#"[['+', '-'], ['0'..'9', ['a'..'f', char_space]]]"#).unwrap();
-            let s = state_set.print_text();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -978,14 +1095,14 @@ mod tests {
 
         // build with marco
         {
-            let state_set = compile_from_str(
+            let image = compile_from_str(
                 r#"
 define(prefix, ['+', '-'])
 define(letter, ['a'..'f', char_space])
 [prefix, ['0'..'9', letter]]"#,
             )
             .unwrap();
-            let s = state_set.print_text();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1021,28 +1138,55 @@ define(letter, ['a'..'f', char_space])
     #[test]
     fn test_compile_assertion() {
         {
-            let state_set = compile_from_str(r#"start, is_bound, 'a', is_not_bound, end"#).unwrap();
-            let s = state_set.print_text();
+            let mut image = compile_from_str(r#"start, is_bound, 'a'"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
-                r#"- 0
-  -> 1, Assertion "is_bound"
+                "\
+- 0
+  -> 1, Assertion \"is_bound\"
 - 1
   -> 2, Jump
 - 2
   -> 3, Char 'a'
 - 3
-  -> 4, Jump
-- 4
-  -> 5, Assertion "is_not_bound"
-- 5
-  -> 7, Match end {0}
-> 6
+  -> 5, Match end {0}
+> 4
   -> 0, Match start {0}
-< 7
-# {0}"#
+< 5
+# {0}"
             );
+
+            // check the 'fixed_start' and 'fixed_end'
+            assert!(image.get_stateset_ref_mut(0).fixed_start);
+            assert!(!image.get_stateset_ref_mut(0).fixed_end);
+        }
+
+        {
+            let mut image = compile_from_str(r#"is_not_bound, 'a', end"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Assertion \"is_not_bound\"
+- 1
+  -> 2, Jump
+- 2
+  -> 3, Char 'a'
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 0, Match start {0}
+< 5
+# {0}"
+            );
+
+            // check the 'fixed_start' and 'fixed_end'
+            assert!(!image.get_stateset_ref_mut(0).fixed_start);
+            assert!(image.get_stateset_ref_mut(0).fixed_end);
         }
 
         // err: assert "start" can only be present at the beginning of expression
@@ -1066,8 +1210,8 @@ define(letter, ['a'..'f', char_space])
     fn test_compile_function_call_name() {
         // function call, and rear function call
         {
-            let state_set = compile_from_str(r#"name('a', foo), 'b'.name(bar)"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"name('a', foo), 'b'.name(bar)"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1099,9 +1243,9 @@ define(letter, ['a'..'f', char_space])
 
         // complex expressions as function call args
         {
-            let state_set =
+            let image =
                 compile_from_str(r#"name(('a', 'b'), foo), ('x' || 'y').name(bar)"#).unwrap();
-            let s = state_set.print_text();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1146,8 +1290,8 @@ define(letter, ['a'..'f', char_space])
 
         // nested function call
         {
-            let state_set = compile_from_str(r#"name(name('a', foo), bar)"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"name(name('a', foo), bar)"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1175,8 +1319,8 @@ define(letter, ['a'..'f', char_space])
 
         // chaining function call
         {
-            let state_set = compile_from_str(r#"'a'.name(foo).name(bar)"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a'.name(foo).name(bar)"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1207,8 +1351,8 @@ define(letter, ['a'..'f', char_space])
     fn test_compile_function_call_index() {
         // function call, and rear function call
         {
-            let state_set = compile_from_str(r#"index('a'), 'b'.index()"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"index('a'), 'b'.index()"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
@@ -1244,8 +1388,8 @@ define(letter, ['a'..'f', char_space])
     #[test]
     fn test_compile_backreference() {
         {
-            let state_set = compile_from_str(r#"'a'.name(foo), 'b', foo"#).unwrap();
-            let s = state_set.print_text();
+            let image = compile_from_str(r#"'a'.name(foo), 'b', foo"#).unwrap();
+            let s = image.get_image_text();
 
             assert_str_eq!(
                 s,

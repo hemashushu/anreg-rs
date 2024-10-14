@@ -47,7 +47,7 @@ pub struct FunctionCall {
 
 #[derive(Debug, PartialEq)]
 pub enum FunctionCallArg {
-    Number(u32),
+    Number(usize),
     Identifier(String),
     Expression(Box<Expression>),
 }

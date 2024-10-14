@@ -42,7 +42,7 @@ pub enum Token {
     Special(String),
     Assertion(String),
 
-    Number(u32),
+    Number(usize),
     Char(char),
     String(String),
     Comment(Comment),

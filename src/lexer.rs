@@ -440,7 +440,7 @@ impl<'a> Lexer<'a> {
             &self.last_position,
         );
 
-        let num = num_string.parse::<u32>().map_err(|_| {
+        let num = num_string.parse::<usize>().map_err(|_| {
             Error::MessageWithLocation(
                 format!("Can not convert \"{}\" to integer number.", num_string),
                 num_range,
@@ -1246,21 +1246,6 @@ mod tests {
                     line: 0,
                     column: 2,
                     length: 0
-                }
-            ))
-        ));
-
-        // err: integer number overflow
-        assert!(matches!(
-            lex_from_str_without_location("4_294_967_296"),
-            Err(Error::MessageWithLocation(
-                _,
-                Location {
-                    unit: 0,
-                    index: 0,
-                    line: 0,
-                    column: 0,
-                    length: 13
                 }
             ))
         ));

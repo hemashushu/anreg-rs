@@ -136,7 +136,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_number(&mut self) -> Result<u32, Error> {
+    fn expect_number(&mut self) -> Result<usize, Error> {
         match self.peek_token(0) {
             Some(Token::Number(n)) => {
                 let num = *n;
@@ -823,9 +823,9 @@ impl<'a> Parser<'a> {
 }
 
 enum NotationQuantifier {
-    Repeat(u32),
-    RepeatRange(u32, u32),
-    AtLeast(u32),
+    Repeat(usize),
+    RepeatRange(usize, usize),
+    AtLeast(usize),
 }
 
 fn assertion_name_from_str(name_str: &str, range: &Location) -> Result<AssertionName, Error> {
