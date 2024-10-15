@@ -22,6 +22,8 @@ pub enum Transition {
     CounterInc(CounterIncTransition),
     CounterCheck(CounterCheckTransition),
     RepetionAnchor(RepetitionAnchorTransition),
+    LookAheadAssertion(LookAheadAssertionTransition),
+    LookBehindAssertion(LookBehindAssertionTransition),
 }
 
 impl Display for Transition {
@@ -40,6 +42,8 @@ impl Display for Transition {
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
             Transition::RepetionAnchor(r) => write!(f, "{}", r),
+            Transition::LookAheadAssertion(l) => write!(f, "{}", l),
+            Transition::LookBehindAssertion(l) => write!(f, "{}", l),
         }
     }
 }
@@ -492,13 +496,13 @@ impl TransitionTrait for CounterCheckTransition {
 
 impl Display for CounterResetTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Counter reset <{}>", self.counter_index)
+        write!(f, "Counter reset %{}", self.counter_index)
     }
 }
 
 impl Display for CounterIncTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Counter inc <{}>", self.counter_index)
+        write!(f, "Counter inc %{}", self.counter_index)
     }
 }
 
@@ -506,7 +510,7 @@ impl Display for CounterCheckTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Counter check <{}>, {}",
+            "Counter check %{}, {}",
             self.counter_index, self.repetition_type
         )
     }
@@ -558,8 +562,86 @@ impl Display for RepetitionAnchorTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Repetition anchor <{}>, threshold {}",
+            "Repetition anchor %{}, threshold {}",
             self.counter_index, self.threshold
         )
+    }
+}
+
+pub struct LookAheadAssertionTransition {
+    stateset_index: usize,
+    negative: bool,
+}
+
+pub struct LookBehindAssertionTransition {
+    stateset_index: usize,
+    negative: bool,
+    pattern_chars_length: usize,
+}
+
+impl LookAheadAssertionTransition {
+    pub fn new(stateset_index: usize, negative: bool) -> Self {
+        LookAheadAssertionTransition {
+            stateset_index,
+            negative,
+        }
+    }
+}
+
+impl LookBehindAssertionTransition {
+    pub fn new(stateset_index: usize, negative: bool, pattern_chars_length: usize) -> Self {
+        LookBehindAssertionTransition {
+            stateset_index,
+            negative,
+            pattern_chars_length,
+        }
+    }
+}
+
+impl TransitionTrait for LookAheadAssertionTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        None
+    }
+}
+
+impl TransitionTrait for LookBehindAssertionTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(self.pattern_chars_length)
+    }
+}
+
+impl Display for LookAheadAssertionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negative {
+            write!(f, "Look ahead negative ${}", self.stateset_index)
+        } else {
+            write!(f, "Look ahead ${}", self.stateset_index)
+        }
+    }
+}
+
+impl Display for LookBehindAssertionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negative {
+            write!(
+                f,
+                "Look behind negative ${}, pattern length {}",
+                self.stateset_index, self.pattern_chars_length
+            )
+        } else {
+            write!(
+                f,
+                "Look behind ${}, pattern length {}",
+                self.stateset_index, self.pattern_chars_length
+            )
+        }
     }
 }

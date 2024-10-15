@@ -209,7 +209,7 @@ impl<'a> Parser<'a> {
 
     // binary expression (login or, etc.)   | precedence low
     // |-- unary expression
-    // |   |-- simple expression            | precedence high
+    // |   |-- base expression              | precedence high
     fn parse_logic_or(&mut self) -> Result<Expression, Error> {
         // token ... [ "||" expression ]
         // -----
@@ -251,7 +251,7 @@ impl<'a> Parser<'a> {
 
     // binary expression (login or, etc.)
     // |-- unary expression
-    // |   |-- simple expression
+    // |   |-- base expression
     fn parse_simple_expression(&mut self) -> Result<Expression, Error> {
         // token ...
         // -----
@@ -505,10 +505,6 @@ impl<'a> Parser<'a> {
                     args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
-                    // return Err(Error::MessageWithLocation(
-                    //     "Unsupported argument value.".to_owned(),
-                    //     self.last_range,
-                    // ));
                     let expression = self.parse_expression()?;
                     args.push(FunctionCallArg::Expression(Box::new(expression)));
                 }

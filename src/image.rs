@@ -19,6 +19,7 @@ use crate::transition::Transition;
 // |
 // |-- state set
 
+// the compile target
 pub struct Image {
     statesets: Vec<StateSet>,
     matches: Vec<Match>,

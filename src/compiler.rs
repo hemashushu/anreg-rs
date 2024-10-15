@@ -4,8 +4,6 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::{char::MAX, usize};
-
 use crate::{
     ast::{
         AssertionName, CharRange, CharSet, CharSetElement, Expression, FunctionCall,
@@ -18,8 +16,9 @@ use crate::{
         add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
         AssertionTransition, BackReferenceTransition, CharSetItem, CharSetTransition,
         CharTransition, CounterCheckTransition, CounterIncTransition, CounterResetTransition,
-        JumpTransition, MatchEndTransition, MatchStartTransition, RepetitionAnchorTransition,
-        RepetitionType, SpecialCharTransition, StringTransition, Transition,
+        JumpTransition, LookAheadAssertionTransition, LookBehindAssertionTransition,
+        MatchEndTransition, MatchStartTransition, RepetitionAnchorTransition, RepetitionType,
+        SpecialCharTransition, StringTransition, Transition,
     },
 };
 
@@ -39,10 +38,14 @@ pub fn compile_from_str(s: &str) -> Result<Image, Error> {
 }
 
 pub struct Compiler<'a> {
+    // AST
     program: &'a Program,
-    // stateset: &'a mut StateSet,
+
+    // compile target
     image: &'a mut Image,
-    stateset_index: usize, // index of the current stateset
+
+    // index of the current stateset
+    stateset_index: usize,
 }
 
 impl<'a> Compiler<'a> {
@@ -400,10 +403,34 @@ impl<'a> Compiler<'a> {
             }
 
             // Assertions
-            FunctionName::IsBefore => todo!(),
-            FunctionName::IsAfter => todo!(),
-            FunctionName::IsNotBefore => todo!(),
-            FunctionName::IsNotAfter => todo!(),
+            FunctionName::IsBefore | FunctionName::IsNotBefore => {
+                // lookahead assertion
+
+                let next_expression = if let FunctionCallArg::Expression(e) = &args[0] {
+                    e
+                } else {
+                    unreachable!()
+                };
+
+                let negative = function_call.name == FunctionName::IsNotBefore;
+                self.emit_lookahead_assertion(&function_call.expression, next_expression, negative)
+            }
+            FunctionName::IsAfter | FunctionName::IsNotAfter => {
+                // lookbehind assertion
+
+                let previous_expression = if let FunctionCallArg::Expression(e) = &args[0] {
+                    e
+                } else {
+                    unreachable!()
+                };
+
+                let negative = function_call.name == FunctionName::IsNotAfter;
+                self.emit_lookbehind_assertion(
+                    &function_call.expression,
+                    previous_expression,
+                    negative,
+                )
+            }
 
             // Capture
             FunctionName::Name => self.emit_capture_name(expression, args),
@@ -795,6 +822,130 @@ impl<'a> Compiler<'a> {
             goto_redo(stateset);
             goto_check_and_exit(stateset);
         }
+
+        Ok(Port::new(in_state_index, out_state_index))
+    }
+
+    fn emit_lookahead_assertion(
+        &mut self,
+        current_expression: &Expression,
+        next_expression: &Expression,
+        negative: bool,
+    ) -> Result<Port, Error> {
+        // * is_before(A, B), A.is_before(B), A(?=B)
+        // * is_not_before(A, B), A.is_not_before(B), A(?!B)
+
+        //              current      | lookahead
+        //  in       /-----------\   v trans
+        // --o======--o in  out o-------o--
+        //      jmp  \-----------/      out
+
+        let port = self.emit_expression(current_expression)?;
+
+        // 1. save the current stateset index
+        // 2. create new stateset
+        // 3. switch to the new stateset
+        let saved_stateset_index = self.stateset_index;
+        let sub_stateset_index = self.image.new_stateset();
+        self.stateset_index = sub_stateset_index;
+
+        {
+            let sub_port = self.emit_expression(next_expression)?;
+            let sub_stateset = self.get_current_stateset();
+
+            // save the sub-program ports
+            sub_stateset.start_node_index = sub_port.in_state_index;
+            sub_stateset.end_node_index = sub_port.out_state_index;
+            sub_stateset.fixed_start = true;
+            sub_stateset.fixed_end = false;
+        }
+
+        // restore to the saved stateset
+        self.stateset_index = saved_stateset_index;
+
+        let stateset = self.get_current_stateset();
+
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
+        stateset.append_transition(
+            in_state_index,
+            port.in_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        stateset.append_transition(
+            port.out_state_index,
+            out_state_index,
+            Transition::LookAheadAssertion(LookAheadAssertionTransition::new(
+                sub_stateset_index,
+                negative,
+            )),
+        );
+
+        Ok(Port::new(in_state_index, out_state_index))
+    }
+
+    fn emit_lookbehind_assertion(
+        &mut self,
+        current_expression: &Expression,
+        next_expression: &Expression,
+        negative: bool,
+    ) -> Result<Port, Error> {
+        // * is_after(A, B), A.is_after(B), (?<=B)A
+        // * is_not_after(A, B, A.is_not_after(B), (?<!B)A
+
+        //     | lookbehind  current
+        //     v trans   /-----------\
+        // --o------------o in  out o--=====--o--
+        //  in           \-----------/  jmp   out
+
+        // 1. save the current stateset index
+        // 2. create new stateset
+        // 3. switch to the new stateset
+        let saved_stateset_index = self.stateset_index;
+        let sub_stateset_index = self.image.new_stateset();
+        self.stateset_index = sub_stateset_index;
+
+        let pattern_chars_length = {
+            let sub_port = self.emit_expression(next_expression)?;
+            let sub_stateset = self.get_current_stateset();
+
+            // save the sub-program ports
+            sub_stateset.start_node_index = sub_port.in_state_index;
+            sub_stateset.end_node_index = sub_port.out_state_index;
+            sub_stateset.fixed_start = true;
+            sub_stateset.fixed_end = true;
+
+            // calculate the total length of patterns
+            0_usize
+        };
+
+        // restore to the saved stateset
+        self.stateset_index = saved_stateset_index;
+
+        let port = self.emit_expression(current_expression)?;
+
+        let stateset = self.get_current_stateset();
+
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
+        stateset.append_transition(
+            in_state_index,
+            port.in_state_index,
+            Transition::LookBehindAssertion(LookBehindAssertionTransition::new(
+                sub_stateset_index,
+                negative,
+                pattern_chars_length,
+            )),
+        );
+
+        stateset.append_transition(
+            port.out_state_index,
+            out_state_index,
+            Transition::Jump(JumpTransition),
+        );
 
         Ok(Port::new(in_state_index, out_state_index))
     }
@@ -1745,14 +1896,14 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor <0>, threshold 1
-  -> 5, Counter check <0>, from 1, to MAX
+  -> 3, Repetition anchor %0, threshold 1
+  -> 5, Counter check %0, from 1, to MAX
 - 5
   -> 7, Match end {0}
 > 6
@@ -1773,13 +1924,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, from 1, to MAX
+  -> 5, Counter check %0, from 1, to MAX
   -> 3, Jump
 - 5
   -> 7, Match end {0}
@@ -1801,14 +1952,14 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor <0>, threshold 1
-  -> 5, Counter check <0>, from 1, to MAX
+  -> 3, Repetition anchor %0, threshold 1
+  -> 5, Counter check %0, from 1, to MAX
 - 5
   -> 7, Jump
 - 6
@@ -1834,13 +1985,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, from 1, to MAX
+  -> 5, Counter check %0, from 1, to MAX
   -> 3, Jump
 - 5
   -> 7, Jump
@@ -1852,6 +2003,47 @@ define(letter, ['a'..'f', char_space])
 > 8
   -> 6, Match start {0}
 < 9
+# {0}"
+            );
+        }
+
+        // multiple
+        {
+            let image = compile_from_str(r#"'a'+,'b'+?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc %0
+- 2
+  -> 3, Counter reset %0
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor %0, threshold 1
+  -> 5, Counter check %0, from 1, to MAX
+- 5
+  -> 8, Jump
+- 6
+  -> 7, Char 'b'
+- 7
+  -> 10, Counter inc %1
+- 8
+  -> 9, Counter reset %1
+- 9
+  -> 6, Jump
+- 10
+  -> 11, Counter check %1, from 1, to MAX
+  -> 9, Jump
+- 11
+  -> 13, Match end {0}
+> 12
+  -> 2, Match start {0}
+< 13
 # {0}"
             );
         }
@@ -1870,13 +2062,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, times 2
+  -> 5, Counter check %0, times 2
   -> 3, Jump
 - 5
   -> 7, Match end {0}
@@ -1937,14 +2129,14 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor <0>, threshold 3
-  -> 5, Counter check <0>, from 3, to 5
+  -> 3, Repetition anchor %0, threshold 3
+  -> 5, Counter check %0, from 3, to 5
 - 5
   -> 7, Match end {0}
 > 6
@@ -1965,13 +2157,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, from 3, to 5
+  -> 5, Counter check %0, from 3, to 5
   -> 3, Jump
 - 5
   -> 7, Match end {0}
@@ -2009,14 +2201,14 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor <0>, threshold 1
-  -> 5, Counter check <0>, from 1, to 5
+  -> 3, Repetition anchor %0, threshold 1
+  -> 5, Counter check %0, from 1, to 5
 - 5
   -> 7, Jump
 - 6
@@ -2042,13 +2234,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, from 1, to 5
+  -> 5, Counter check %0, from 1, to 5
   -> 3, Jump
 - 5
   -> 7, Jump
@@ -2111,14 +2303,14 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor <0>, threshold 3
-  -> 5, Counter check <0>, from 3, to MAX
+  -> 3, Repetition anchor %0, threshold 3
+  -> 5, Counter check %0, from 3, to MAX
 - 5
   -> 7, Match end {0}
 > 6
@@ -2139,13 +2331,13 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc <0>
+  -> 4, Counter inc %0
 - 2
-  -> 3, Counter reset <0>
+  -> 3, Counter reset %0
 - 3
   -> 0, Jump
 - 4
-  -> 5, Counter check <0>, from 3, to MAX
+  -> 5, Counter check %0, from 3, to MAX
   -> 3, Jump
 - 5
   -> 7, Match end {0}
@@ -2185,6 +2377,124 @@ define(letter, ['a'..'f', char_space])
             assert_str_eq!(
                 compile_from_str(r#"'a'{0,}?"#).unwrap().get_image_text(),
                 compile_from_str(r#"'a'*?"#).unwrap().get_image_text()
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_is_before() {
+        // positive
+        {
+            let image = compile_from_str(r#"'a'.is_before('b')"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+stateset: $0
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Look ahead $1
+- 2
+  -> 0, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+stateset: $1
+> 0
+  -> 1, Char 'b'
+< 1
+# {0}"
+            );
+        }
+
+        // negative
+        {
+            let image = compile_from_str(r#"'a'.is_not_before('b')"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+stateset: $0
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Look ahead negative $1
+- 2
+  -> 0, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+stateset: $1
+> 0
+  -> 1, Char 'b'
+< 1
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_is_after() {
+        // positive
+        {
+            let image = compile_from_str(r#"'a'.is_after('b')"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+stateset: $0
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 0, Look behind $1, pattern length 0
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+stateset: $1
+> 0
+  -> 1, Char 'b'
+< 1
+# {0}"
+            );
+        }
+
+        // negative
+        {
+            let image = compile_from_str(r#"'a'.is_not_after('b')"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+stateset: $0
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 0, Look behind negative $1, pattern length 0
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+stateset: $1
+> 0
+  -> 1, Char 'b'
+< 1
+# {0}"
             );
         }
     }
