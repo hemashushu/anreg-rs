@@ -18,6 +18,10 @@ pub enum Transition {
     Assertion(AssertionTransition),
     MatchStart(MatchStartTransition),
     MatchEnd(MatchEndTransition),
+    CounterReset(CounterResetTransition),
+    CounterInc(CounterIncTransition),
+    CounterCheck(CounterCheckTransition),
+    RepetionAnchor(RepetitionAnchorTransition),
 }
 
 impl Display for Transition {
@@ -32,6 +36,10 @@ impl Display for Transition {
             Transition::Assertion(a) => write!(f, "{}", a),
             Transition::MatchStart(m) => write!(f, "{}", m),
             Transition::MatchEnd(m) => write!(f, "{}", m),
+            Transition::CounterReset(c) => write!(f, "{}", c),
+            Transition::CounterInc(c) => write!(f, "{}", c),
+            Transition::CounterCheck(c) => write!(f, "{}", c),
+            Transition::RepetionAnchor(r) => write!(f, "{}", r),
         }
     }
 }
@@ -364,13 +372,33 @@ pub struct MatchStartTransition {
     match_index: usize,
 }
 
+pub struct MatchEndTransition {
+    match_index: usize,
+}
+
 impl MatchStartTransition {
     pub fn new(match_index: usize) -> Self {
         MatchStartTransition { match_index }
     }
 }
 
+impl MatchEndTransition {
+    pub fn new(match_index: usize) -> Self {
+        MatchEndTransition { match_index }
+    }
+}
+
 impl TransitionTrait for MatchStartTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        todo!()
+    }
+}
+
+impl TransitionTrait for MatchEndTransition {
     fn validated(&self, context: &Context) -> ValidateResult {
         todo!()
     }
@@ -386,28 +414,152 @@ impl Display for MatchStartTransition {
     }
 }
 
-pub struct MatchEndTransition {
-    match_index: usize,
-}
-
-impl MatchEndTransition {
-    pub fn new(match_index: usize) -> Self {
-        MatchEndTransition { match_index }
+impl Display for MatchEndTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Match end {{{}}}", self.match_index)
     }
 }
 
-impl TransitionTrait for MatchEndTransition {
+pub struct CounterResetTransition {
+    counter_index: usize,
+}
+
+pub struct CounterIncTransition {
+    counter_index: usize,
+}
+
+pub struct CounterCheckTransition {
+    counter_index: usize,
+    repetition_type: RepetitionType,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum RepetitionType {
+    Specified(usize),
+    Range(usize, usize),
+}
+
+impl CounterResetTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterResetTransition { counter_index }
+    }
+}
+
+impl CounterIncTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterIncTransition { counter_index }
+    }
+}
+
+impl CounterCheckTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        CounterCheckTransition {
+            counter_index,
+            repetition_type,
+        }
+    }
+}
+
+impl TransitionTrait for CounterResetTransition {
     fn validated(&self, context: &Context) -> ValidateResult {
         todo!()
     }
 
     fn length(&self) -> Option<usize> {
-        todo!()
+        Some(0)
     }
 }
 
-impl Display for MatchEndTransition {
+impl TransitionTrait for CounterIncTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(0)
+    }
+}
+
+impl TransitionTrait for CounterCheckTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(0)
+    }
+}
+
+impl Display for CounterResetTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Match end {{{}}}", self.match_index)
+        write!(f, "Counter reset <{}>", self.counter_index)
+    }
+}
+
+impl Display for CounterIncTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Counter inc <{}>", self.counter_index)
+    }
+}
+
+impl Display for CounterCheckTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Counter check <{}>, {}",
+            self.counter_index, self.repetition_type
+        )
+    }
+}
+
+impl Display for RepetitionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RepetitionType::Specified(n) => write!(f, "times {}", n),
+            RepetitionType::Range(m, n) => {
+                if n == &usize::MAX {
+                    write!(f, "from {}, to MAX", m)
+                } else {
+                    write!(f, "from {}, to {}", m, n)
+                }
+            }
+        }
+    }
+}
+
+pub struct RepetitionAnchorTransition {
+    counter_index: usize,
+
+    // to indicate when to start recording,
+    // the value of 'threshold' is the times (included) of repetition.
+    threshold: usize,
+}
+
+impl RepetitionAnchorTransition {
+    pub fn new(counter_index: usize, threshold: usize) -> Self {
+        RepetitionAnchorTransition {
+            counter_index,
+            threshold,
+        }
+    }
+}
+
+impl TransitionTrait for RepetitionAnchorTransition {
+    fn validated(&self, context: &Context) -> ValidateResult {
+        todo!()
+    }
+
+    fn length(&self) -> Option<usize> {
+        Some(0)
+    }
+}
+
+impl Display for RepetitionAnchorTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Repetition anchor <{}>, threshold {}",
+            self.counter_index, self.threshold
+        )
     }
 }

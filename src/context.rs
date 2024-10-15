@@ -5,12 +5,13 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 pub struct Context {
-    pub text: Vec<char>,      // the source text
-    pub length: usize,        // the length of source text
+    pub text: Vec<char>, // the source text
+    pub length: usize,   // the length of source text
 
     pub cursors: Vec<Cursor>, // the `Cursor` stack.
     pub position: usize,      // it is sync to the position of the last cursor
     pub results: Vec<Result>, // the results of matches
+    pub counters: Vec<usize>, // repetitions counters
 }
 
 // The `Cursor` can only be moved to left as a whole,
@@ -20,11 +21,14 @@ pub struct Cursor {
     pub start: usize, // the start poisition
     pub end: usize,   // the end position, it is the length of source text.
 
+    // store the positions of greedy repetition for
+    // backtracking.
+    pub anchors: Vec<usize>,
+
     // the position of the currently matched character.
     // unlike the `start` position of `Cursor`, this value can only
     // be increased (moved to right).
     pub position: usize,
-
 }
 
 // the Cursor stack demo:
@@ -41,10 +45,12 @@ pub struct Cursor {
 // start                                 end
 // 0                                     len
 // |-------------------------------------|
-// |======*==============================| <-- cursor 0
-// | pos__^     |===*====================| <-- cursor 1
-// |            ^   ^__ pos' move to right only
-// |            |__ start' move to left only
+// |          v-- pos                    |
+// |====#=#=#=*==========================| <-- cursor 0
+// |    ^ ^ ^ ^                          |
+// |    | | | |===*======================| <-- cursor 1
+// | anchors/ ^   ^__ pos' move to right only
+// |          |__ start' move to left by anchor
 // |                                     |
 // |-------------------------------------|
 //
@@ -61,11 +67,13 @@ pub struct Cursor {
 // start                                 end
 // 0                                     len
 // |-------------------------------------|
-// |======*==============================| <-- cursor 0
-// | pos__^     |====*===================| <-- cursor 1
-// |    start'__^    ^__ pos' ^          |
-// |                          |===*======| <-- cursor 2
-// |                 start''__^   ^__ pos''
+// |            v-- pos                  |
+// |======#==#==*========================| <-- cursor 0
+// | anchors ^  ^            v-- pos'    |
+// |            |====#===#===*===========| <-- cursor 1
+// |    start'__^            ^           |
+// |                         |===*=======| <-- cursor 2
+// |                start''__^   ^__ pos''
 // |                                     |
 // |-------------------------------------|
 //
@@ -73,12 +81,12 @@ pub struct Cursor {
 //
 // start                                 end
 // 0                                     len
-// |=============*=======================| <-- cursor 0
-//               ^__ position (move to right only)
+// |==================*=================| <-- cursor 0
+//                    ^__ position (move to right only)
 
 pub struct Result {
     start: usize,
-    end_included: usize
+    end_included: usize,
 }
 
 impl Context {
@@ -139,5 +147,4 @@ impl Context {
             || ('0'..='9').any(|e| e == c)
             || c == '_'
     }
-
 }

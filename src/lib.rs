@@ -11,13 +11,13 @@ mod compiler;
 mod context;
 mod error;
 mod errorprinter;
+mod image;
 mod lexer;
 mod location;
 mod macroexpander;
 mod normalizer;
 mod parser;
 mod peekableiter;
-mod image;
 mod token;
 mod transition;
 

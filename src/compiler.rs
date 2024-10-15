@@ -4,7 +4,7 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::usize;
+use std::{char::MAX, usize};
 
 use crate::{
     ast::{
@@ -17,8 +17,9 @@ use crate::{
     transition::{
         add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
         AssertionTransition, BackReferenceTransition, CharSetItem, CharSetTransition,
-        CharTransition, JumpTransition, MatchEndTransition, MatchStartTransition,
-        SpecialCharTransition, StringTransition, Transition,
+        CharTransition, CounterCheckTransition, CounterIncTransition, CounterResetTransition,
+        JumpTransition, MatchEndTransition, MatchStartTransition, RepetitionAnchorTransition,
+        RepetitionType, SpecialCharTransition, StringTransition, Transition,
     },
 };
 
@@ -108,9 +109,10 @@ impl<'a> Compiler<'a> {
 
         let program_port = if ports.is_empty() {
             // empty expression
-            Port::new(0, 0)
+            let relay_state_index = stateset.new_state();
+            Port::new(relay_state_index, relay_state_index)
         } else if ports.len() == 1 {
-            // eliminates the nested group, e.g. '(((...)))'
+            // single expression
             ports.pop().unwrap()
         } else {
             for idx in 0..(ports.len() - 1) {
@@ -130,11 +132,10 @@ impl<'a> Compiler<'a> {
             )
         };
 
-        //                              current
-        //   in                      /-----------\                    out
-        //  --o==match start trans==--o in  out o--==match end trans==o--
-        //                           \-----------/
-        //
+        //     match start     comp        match end
+        //        trans    /-----------\    trans
+        //  --o===========--o in  out o--==========o--
+        //   in            \-----------/           out
 
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
@@ -179,32 +180,46 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_group(&mut self, expressions: &[Expression]) -> Result<Port, Error> {
+        /*
+         * the "group" of ANREG is different from the "group" of
+         * ordinary regular expressions.
+         * the "group" of ANREG is just a series of parenthesized patterns
+         * that are not captured unless called by the 'name' or 'index' function.
+         * e.g.
+         * ANREG `('a', 'b', char_word+)` is equivalent to oridinary regex `ab\w+`
+         * the "group" of ANREG is used to group patterns and
+         * change operator precedence and associativity
+         */
+
         // connecting two groups of states by adding a 'jump transition'
         //
-        //     current                      next
-        //  /-----------\               /-----------\
-        // --o in  out o-- ==jump trans== --o in  out o--
-        //  \-----------/               \-----------/
-        //
-
-        if expressions.is_empty() {
-            return Err(Error::Message("A group should not be empty.".to_owned()));
-        }
+        //     prev                      next
+        //  /-----------\    jump    /-----------\
+        // --o in  out o--==========--o in  out o--
+        //  \-----------/            \-----------/
 
         let mut ports = vec![];
         for expression in expressions {
             ports.push(self.emit_expression(expression)?);
         }
 
-        let port = if ports.len() == 1 {
-            // eliminates the nested group, e.g. '(((...)))'
+        let stateset = self.get_current_stateset();
+
+        let port = if ports.len() == 0 {
+            // empty group
+            let relay_state_index = stateset.new_state();
+            Port::new(relay_state_index, relay_state_index)
+        } else if ports.len() == 1 {
+            // single expression.
+            // maybe a group also, so return the underlay port directly
+            // to eliminates the nested group, e.g. '(((...)))'.
             ports.pop().unwrap()
         } else {
             for idx in 0..(ports.len() - 1) {
                 let current_out_state_index = ports[idx].out_state_index;
                 let next_in_state_index = ports[idx + 1].in_state_index;
                 let transition = Transition::Jump(JumpTransition);
-                self.get_current_stateset().append_transition(
+                stateset.append_transition(
                     current_out_state_index,
                     next_in_state_index,
                     transition,
@@ -222,14 +237,14 @@ impl<'a> Compiler<'a> {
 
     fn emit_logic_or(&mut self, left: &Expression, right: &Expression) -> Result<Port, Error> {
         //                    left
-        //                /-----------\
-        //      /==jump==--o in  out o--==jump==\
+        //         jump   /-----------\   jump
+        //      /========--o in  out o--========\
         //  in  |         \-----------/         |  out
         // --o==|                               |==o--
         //      |             right             |
         //      |         /-----------\         |
-        //      \==jump==--o in  out o--==jump==/
-        //                \-----------/
+        //      \========--o in  out o--========/
+        //         jump   \-----------/   jump
 
         let left_port = self.emit_expression(left)?;
         let right_port = self.emit_expression(right)?;
@@ -270,26 +285,52 @@ impl<'a> Compiler<'a> {
         let expression = &function_call.expression;
         let args = &function_call.args;
 
+        let is_lazy = match &function_call.name {
+            FunctionName::OptionalLazy
+            | FunctionName::OneOrMoreLazy
+            | FunctionName::ZeroOrMoreLazy
+            | FunctionName::RepeatRangeLazy
+            | FunctionName::AtLeastLazy => true,
+            _ => false,
+        };
+
         match &function_call.name {
-            // Greedy Quantifier
-            FunctionName::Optional => {
-                self.emit_function_call_quantifier(expression, true, 0, 1, false)
+            // Quantifier
+            FunctionName::Optional | FunctionName::OptionalLazy => {
+                self.emit_optional(expression, is_lazy)
             }
-            FunctionName::OneOrMore => {
-                self.emit_function_call_quantifier(expression, false, 1, usize::MAX, false)
+            FunctionName::OneOrMore | FunctionName::OneOrMoreLazy => {
+                // {1,MAX}
+                self.emit_repeat_range(expression, 1, usize::MAX, is_lazy)
             }
-            FunctionName::ZeroOrMore => {
-                self.emit_function_call_quantifier(expression, false, 0, usize::MAX, false)
+            FunctionName::ZeroOrMore | FunctionName::ZeroOrMoreLazy => {
+                // {0,MAX}
+                // optional + one_or_more
+                let port = self.emit_repeat_range(expression, 1, usize::MAX, is_lazy)?;
+                self.continue_emit_optional(port, is_lazy)
             }
             FunctionName::Repeat => {
-                let from = if let FunctionCallArg::Number(n) = &args[0] {
+                let times = if let FunctionCallArg::Number(n) = &args[0] {
                     *n
                 } else {
                     unreachable!()
                 };
-                self.emit_function_call_quantifier(expression, true, from, from, false)
+
+                if times == 0 {
+                    // {0}
+                    // return a new empty transition
+                    self.emit_empty()
+                } else if times == 1 {
+                    // {1}
+                    // return the expression without repetition
+                    self.emit_expression(expression)
+                } else {
+                    // {m}
+                    // repeat specified
+                    self.emit_repeat_specified(expression, times)
+                }
             }
-            FunctionName::RepeatRange => {
+            FunctionName::RepeatRange | FunctionName::RepeatRangeLazy => {
                 let from = if let FunctionCallArg::Number(n) = &args[0] {
                     *n
                 } else {
@@ -302,57 +343,60 @@ impl<'a> Compiler<'a> {
                     unreachable!()
                 };
 
-                self.emit_function_call_quantifier(expression, false, from, to, false)
-            }
-            FunctionName::AtLeast => {
-                let from = if let FunctionCallArg::Number(n) = &args[0] {
-                    *n
-                } else {
-                    unreachable!()
-                };
-                self.emit_function_call_quantifier(expression, false, from, from, false)
-            }
+                if from > to {
+                    return Err(Error::Message(
+                        "Repeated range values should be from small to large.".to_owned(),
+                    ));
+                }
 
-            // Lazy Quantifier
-            FunctionName::OptionalLazy => {
-                self.emit_function_call_quantifier(expression, true, 0, 1, true)
-            }
-            FunctionName::OneOrMoreLazy => {
-                self.emit_function_call_quantifier(expression, false, 1, usize::MAX, true)
-            }
-            FunctionName::ZeroOrMoreLazy => {
-                self.emit_function_call_quantifier(expression, false, 0, usize::MAX, true)
-            }
-            FunctionName::RepeatLazy => {
-                let from = if let FunctionCallArg::Number(n) = &args[0] {
-                    *n
+                if from == 0 {
+                    if to == 0 {
+                        // {0,0}
+                        // return a new empty transition
+                        self.emit_empty()
+                    } else if to == 1 {
+                        // {0,1}
+                        // optional
+                        self.emit_optional(expression, is_lazy)
+                    } else {
+                        // {0,m}
+                        // optional + range
+                        let port = self.emit_repeat_range(expression, 1, to, is_lazy)?;
+                        self.continue_emit_optional(port, is_lazy)
+                    }
                 } else {
-                    unreachable!()
-                };
-                self.emit_function_call_quantifier(expression, true, from, from, true)
+                    if to == 1 {
+                        // {1,1}
+                        // return the expression without repetition
+                        self.emit_expression(expression)
+                    } else if from == to {
+                        // {m,m}
+                        // repeat specified
+                        self.emit_repeat_specified(expression, from)
+                    } else {
+                        // {m,n}
+                        // repeat range
+                        self.emit_repeat_range(expression, from, to, is_lazy)
+                    }
+                }
             }
-            FunctionName::RepeatRangeLazy => {
+            FunctionName::AtLeast | FunctionName::AtLeastLazy => {
                 let from = if let FunctionCallArg::Number(n) = &args[0] {
                     *n
                 } else {
                     unreachable!()
                 };
 
-                let to = if let FunctionCallArg::Number(n) = &args[1] {
-                    *n
+                if from == 0 {
+                    // {0,MAX}
+                    // optional + one_or_more
+                    let port = self.emit_repeat_range(expression, 1, usize::MAX, is_lazy)?;
+                    self.continue_emit_optional(port, is_lazy)
                 } else {
-                    unreachable!()
-                };
-
-                self.emit_function_call_quantifier(expression, false, from, to, true)
-            }
-            FunctionName::AtLeastLazy => {
-                let from = if let FunctionCallArg::Number(n) = &args[0] {
-                    *n
-                } else {
-                    unreachable!()
-                };
-                self.emit_function_call_quantifier(expression, false, from, from, true)
+                    // {m,MAX}
+                    // repeat range
+                    self.emit_repeat_range(expression, from, usize::MAX, is_lazy)
+                }
             }
 
             // Assertions
@@ -362,9 +406,24 @@ impl<'a> Compiler<'a> {
             FunctionName::IsNotAfter => todo!(),
 
             // Capture
-            FunctionName::Name => self.emit_function_call_name(expression, args),
-            FunctionName::Index => self.emit_function_call_index(expression),
+            FunctionName::Name => self.emit_capture_name(expression, args),
+            FunctionName::Index => self.emit_capture_index(expression),
         }
+    }
+
+    fn emit_empty(&mut self) -> Result<Port, Error> {
+        let stateset = self.get_current_stateset();
+
+        /*
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+        let transition = Transition::Jump(JumpTransition);
+        stateset.append_transition(in_state_index, out_state_index, transition);
+        Ok(Port::new(in_state_index, out_state_index))
+        */
+
+        let relay_state_index = stateset.new_state();
+        Ok(Port::new(relay_state_index, relay_state_index))
     }
 
     fn emit_literal(&mut self, literal: &Literal) -> Result<Port, Error> {
@@ -521,7 +580,7 @@ impl<'a> Compiler<'a> {
         Ok(Port::new(in_state_index, out_state_index))
     }
 
-    fn emit_function_call_name(
+    fn emit_capture_name(
         &mut self,
         expression: &Expression,
         args: &[FunctionCallArg],
@@ -532,14 +591,14 @@ impl<'a> Compiler<'a> {
             unreachable!();
         };
 
-        self.continue_emit_function_call_name_and_index(expression, Some(name))
+        self.continue_emit_capture(expression, Some(name))
     }
 
-    fn emit_function_call_index(&mut self, expression: &Expression) -> Result<Port, Error> {
-        self.continue_emit_function_call_name_and_index(expression, None)
+    fn emit_capture_index(&mut self, expression: &Expression) -> Result<Port, Error> {
+        self.continue_emit_capture(expression, None)
     }
 
-    fn continue_emit_function_call_name_and_index(
+    fn continue_emit_capture(
         &mut self,
         expression: &Expression,
         name_option: Option<String>,
@@ -547,11 +606,10 @@ impl<'a> Compiler<'a> {
         let match_index = self.image.new_match(name_option);
         let port = self.emit_expression(expression)?;
 
-        //                              current
-        //   in                      /-----------\                    out
-        //  --o==match start trans==--o in  out o--==match end trans==o--
-        //                           \-----------/
-        //
+        //     match start      comp        match end
+        //   in   trans    /-----------\    trans  out
+        //  --o===========--o in  out o--==========o--
+        //                 \-----------/
 
         let stateset = self.get_current_stateset();
         let in_state_index = stateset.new_state();
@@ -575,15 +633,170 @@ impl<'a> Compiler<'a> {
         Ok(Port::new(in_state_index, out_state_index))
     }
 
-    fn emit_function_call_quantifier(
+    fn emit_optional(&mut self, expression: &Expression, is_lazy: bool) -> Result<Port, Error> {
+        // greedy optional
+        //
+        //                    comp
+        //   in     jmp  /-----------\  jmp out
+        //  --o|o--=====--o in  out o--=====o--
+        //     |o--\     \-----------/      ^
+        //      ^  |                        |
+        //      |  \========================/
+        //      |           jump trans
+        //      \ switch these two trans for lazy matching
+
+        let port = self.emit_expression(expression)?;
+        self.continue_emit_optional(port, is_lazy)
+    }
+
+    fn continue_emit_optional(&mut self, port: Port, is_lazy: bool) -> Result<Port, Error> {
+        let stateset = self.get_current_stateset();
+
+        let in_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
+        if is_lazy {
+            stateset.append_transition(
+                in_state_index,
+                out_state_index,
+                Transition::Jump(JumpTransition),
+            );
+        }
+
+        stateset.append_transition(
+            in_state_index,
+            port.in_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        stateset.append_transition(
+            port.out_state_index,
+            out_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        if !is_lazy {
+            stateset.append_transition(
+                in_state_index,
+                out_state_index,
+                Transition::Jump(JumpTransition),
+            );
+        }
+
+        Ok(Port::new(in_state_index, out_state_index))
+    }
+
+    fn emit_repeat_specified(
         &mut self,
         expression: &Expression,
-        is_fixed: bool,
+        times: usize,
+    ) -> Result<Port, Error> {
+        assert!(times > 1);
+        self.continue_emit_repetition(expression, RepetitionType::Specified(times), true)
+    }
+
+    fn emit_repeat_range(
+        &mut self,
+        expression: &Expression,
         from: usize,
         to: usize,
         is_lazy: bool,
     ) -> Result<Port, Error> {
-        todo!()
+        assert!(from > 0 && to > 1 && to > from);
+        self.continue_emit_repetition(expression, RepetitionType::Range(from, to), is_lazy)
+    }
+
+    fn continue_emit_repetition(
+        &mut self,
+        expression: &Expression,
+        repetition_type: RepetitionType,
+        is_lazy: bool,
+    ) -> Result<Port, Error> {
+        // lazy repetition
+        //                                         counter
+        //                             comp      | inc
+        //   in        left  jump  /-----------\ v trans  right     out
+        //  --o----------o--======--o in  out o-----------o|o-------o--
+        //      ^ cnter  ^         \-----------/           |o-\  ^ counter
+        //      | reset  |                                    |  | check
+        //        trans  \====================================/    trans
+        //                               ^                    ^
+        //  repetition anchor trans for  |                    |
+        //  greedy range repetition,     |                    |
+        //  jump trans for other reps.   /                    |
+        //     switch these two trans pos for greedy matching |
+
+        let port = self.emit_expression(expression)?;
+        let counter_index = self.image.new_counter();
+
+        let stateset = self.get_current_stateset();
+
+        let in_state_index = stateset.new_state();
+        let left_state_index = stateset.new_state();
+        let right_state_index = stateset.new_state();
+        let out_state_index = stateset.new_state();
+
+        stateset.append_transition(
+            in_state_index,
+            left_state_index,
+            Transition::CounterReset(CounterResetTransition::new(counter_index)),
+        );
+
+        stateset.append_transition(
+            left_state_index,
+            port.in_state_index,
+            Transition::Jump(JumpTransition),
+        );
+
+        stateset.append_transition(
+            port.out_state_index,
+            right_state_index,
+            Transition::CounterInc(CounterIncTransition::new(counter_index)),
+        );
+
+        let goto_check_and_exit = |ss: &mut StateSet| {
+            ss.append_transition(
+                right_state_index,
+                out_state_index,
+                Transition::CounterCheck(CounterCheckTransition::new(
+                    counter_index,
+                    repetition_type,
+                )),
+            );
+        };
+
+        let goto_redo = |ss: &mut StateSet| {
+            let threshold_option = if is_lazy {
+                None
+            } else {
+                if let RepetitionType::Range(from, _) = repetition_type {
+                    Some(from)
+                } else {
+                    None
+                }
+            };
+
+            let transition = if let Some(threshold) = threshold_option {
+                Transition::RepetionAnchor(RepetitionAnchorTransition::new(
+                    counter_index,
+                    threshold,
+                ))
+            } else {
+                Transition::Jump(JumpTransition)
+            };
+
+            ss.append_transition(right_state_index, left_state_index, transition);
+        };
+
+        if is_lazy {
+            goto_check_and_exit(stateset);
+            goto_redo(stateset);
+        } else {
+            goto_redo(stateset);
+            goto_check_and_exit(stateset);
+        }
+
+        Ok(Port::new(in_state_index, out_state_index))
     }
 }
 
@@ -1207,7 +1420,7 @@ define(letter, ['a'..'f', char_space])
     }
 
     #[test]
-    fn test_compile_function_call_name() {
+    fn test_compile_capture_name() {
         // function call, and rear function call
         {
             let image = compile_from_str(r#"name('a', foo), 'b'.name(bar)"#).unwrap();
@@ -1348,7 +1561,7 @@ define(letter, ['a'..'f', char_space])
     }
 
     #[test]
-    fn test_compile_function_call_index() {
+    fn test_compile_capture_index() {
         // function call, and rear function call
         {
             let image = compile_from_str(r#"index('a'), 'b'.index()"#).unwrap();
@@ -1415,6 +1628,563 @@ define(letter, ['a'..'f', char_space])
 < 9
 # {0}
 # {1}, foo"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_optional() {
+        // greedy
+        {
+            let image = compile_from_str(r#"'a'?"#).unwrap();
+            let s = image.get_image_text();
+            // println!("{}", s);
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 0, Jump
+  -> 3, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+# {0}"
+            );
+        }
+
+        // lazy
+        {
+            let image = compile_from_str(r#"'a'??"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 3, Jump
+  -> 0, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_notations() {
+        // optional
+        {
+            let image = compile_from_str(r#"'a'?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 0, Jump
+  -> 3, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+# {0}"
+            );
+        }
+
+        // lazy optional
+        {
+            let image = compile_from_str(r#"'a'??"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Jump
+- 2
+  -> 3, Jump
+  -> 0, Jump
+- 3
+  -> 5, Match end {0}
+> 4
+  -> 2, Match start {0}
+< 5
+# {0}"
+            );
+        }
+
+        // one or more
+        {
+            let image = compile_from_str(r#"'a'+"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor <0>, threshold 1
+  -> 5, Counter check <0>, from 1, to MAX
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // lazy one or more
+        {
+            let image = compile_from_str(r#"'a'+?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, from 1, to MAX
+  -> 3, Jump
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // zero or more
+        {
+            let image = compile_from_str(r#"'a'*"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor <0>, threshold 1
+  -> 5, Counter check <0>, from 1, to MAX
+- 5
+  -> 7, Jump
+- 6
+  -> 2, Jump
+  -> 7, Jump
+- 7
+  -> 9, Match end {0}
+> 8
+  -> 6, Match start {0}
+< 9
+# {0}"
+            );
+        }
+
+        // lazy zero or more
+        {
+            let image = compile_from_str(r#"'a'*?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, from 1, to MAX
+  -> 3, Jump
+- 5
+  -> 7, Jump
+- 6
+  -> 7, Jump
+  -> 2, Jump
+- 7
+  -> 9, Match end {0}
+> 8
+  -> 6, Match start {0}
+< 9
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_repeat_specified() {
+        // repeat 1+
+        {
+            let image = compile_from_str(r#"'a'{2}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, times 2
+  -> 3, Jump
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // repeat 1
+        {
+            let image = compile_from_str(r#"'a'{1}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Match end {0}
+> 2
+  -> 0, Match start {0}
+< 3
+# {0}"
+            );
+        }
+
+        // repeat 0
+        {
+            let image = compile_from_str(r#"'a'{0}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 2, Match end {0}
+> 1
+  -> 0, Match start {0}
+< 2
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_repeat_range() {
+        // greedy
+        {
+            let image = compile_from_str(r#"'a'{3,5}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor <0>, threshold 3
+  -> 5, Counter check <0>, from 3, to 5
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // lazy
+        {
+            let image = compile_from_str(r#"'a'{3,5}?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, from 3, to 5
+  -> 3, Jump
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // {m, m}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{3,3}"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'{3}"#).unwrap().get_image_text()
+            )
+        }
+
+        // {1, 1}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,1}"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'"#).unwrap().get_image_text()
+            )
+        }
+
+        // {0, m}
+        {
+            let image = compile_from_str(r#"'a'{0,5}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor <0>, threshold 1
+  -> 5, Counter check <0>, from 1, to 5
+- 5
+  -> 7, Jump
+- 6
+  -> 2, Jump
+  -> 7, Jump
+- 7
+  -> 9, Match end {0}
+> 8
+  -> 6, Match start {0}
+< 9
+# {0}"
+            );
+        }
+
+        // {0, m} lazy
+        {
+            let image = compile_from_str(r#"'a'{0,5}?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, from 1, to 5
+  -> 3, Jump
+- 5
+  -> 7, Jump
+- 6
+  -> 7, Jump
+  -> 2, Jump
+- 7
+  -> 9, Match end {0}
+> 8
+  -> 6, Match start {0}
+< 9
+# {0}"
+            );
+        }
+
+        // {0, 1}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,1}"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'?"#).unwrap().get_image_text()
+            )
+        }
+
+        // {0, 1} lazy
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,1}?"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'??"#).unwrap().get_image_text()
+            )
+        }
+
+        // {0, 0}
+        {
+            let image = compile_from_str(r#"'a'{0,0}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 2, Match end {0}
+> 1
+  -> 0, Match start {0}
+< 2
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_repeat_at_least() {
+        // {m,}
+        {
+            let image = compile_from_str(r#"'a'{3,}"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 3, Repetition anchor <0>, threshold 3
+  -> 5, Counter check <0>, from 3, to MAX
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // lazy
+        {
+            let image = compile_from_str(r#"'a'{3,}?"#).unwrap();
+            let s = image.get_image_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc <0>
+- 2
+  -> 3, Counter reset <0>
+- 3
+  -> 0, Jump
+- 4
+  -> 5, Counter check <0>, from 3, to MAX
+  -> 3, Jump
+- 5
+  -> 7, Match end {0}
+> 6
+  -> 2, Match start {0}
+< 7
+# {0}"
+            );
+        }
+
+        // {1,} == one_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,}"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'+"#).unwrap().get_image_text()
+            );
+        }
+
+        // {1,}? == lazy one_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,}?"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'+?"#).unwrap().get_image_text()
+            );
+        }
+
+        // {0,} == zero_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,}"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'*"#).unwrap().get_image_text()
+            );
+        }
+
+        // {0,}? == lazy zero_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,}?"#).unwrap().get_image_text(),
+                compile_from_str(r#"'a'*?"#).unwrap().get_image_text()
             );
         }
     }

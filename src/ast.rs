@@ -152,7 +152,6 @@ pub enum FunctionName {
     OptionalLazy,
     OneOrMoreLazy,
     ZeroOrMoreLazy,
-    RepeatLazy,
     RepeatRangeLazy,
     AtLeastLazy,
 
@@ -179,7 +178,6 @@ impl Display for FunctionName {
             FunctionName::OptionalLazy => f.write_str("optional_lazy"),
             FunctionName::OneOrMoreLazy => f.write_str("one_or_more_lazy"),
             FunctionName::ZeroOrMoreLazy => f.write_str("zero_or_more_lazy"),
-            FunctionName::RepeatLazy => f.write_str("repeat_lazy"),
             FunctionName::RepeatRangeLazy => f.write_str("repeat_range_lazy"),
             FunctionName::AtLeastLazy => f.write_str("at_least_lazy"),
             FunctionName::IsBefore => f.write_str("is_before"),

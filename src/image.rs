@@ -22,6 +22,7 @@ use crate::transition::Transition;
 pub struct Image {
     statesets: Vec<StateSet>,
     matches: Vec<Match>,
+    counters: usize,
 }
 
 pub struct StateSet {
@@ -68,6 +69,7 @@ impl Image {
         Image {
             statesets: vec![],
             matches: vec![],
+            counters: 0,
         }
     }
 
@@ -85,6 +87,12 @@ impl Image {
         let idx = self.statesets.len();
         self.statesets.push(stateset);
         idx
+    }
+
+    pub fn new_counter(&mut self) -> usize {
+        let counter_index = self.counters;
+        self.counters += 1;
+        counter_index
     }
 
     pub fn get_stateset_ref_mut(&mut self, idx: usize) -> &mut StateSet {
@@ -373,7 +381,7 @@ impl StateNode {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_str_eq;
+    use pretty_assertions::{assert_eq, assert_str_eq};
 
     use crate::{
         image::Image,
@@ -436,6 +444,23 @@ stateset: $1
 > state <idx:0>, head:None, tail:None"
             );
         }
+    }
+
+    #[test]
+    fn test_image_new_counter() {
+        let mut image = Image::new();
+        assert_eq!(image.counters, 0);
+
+        let index1 = image.new_counter();
+
+        assert_eq!(index1, 0);
+        assert_eq!(image.counters, 1);
+
+        let index2 = image.new_counter();
+        let index3 = image.new_counter();
+
+        assert_eq!(index2, 1);
+        assert_eq!(index3, 2);
     }
 
     #[test]

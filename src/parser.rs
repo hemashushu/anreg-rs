@@ -277,6 +277,8 @@ impl<'a> Parser<'a> {
                 | Token::QuestionLazy
                 | Token::PlusLazy
                 | Token::AsteriskLazy => {
+                    /* notations */
+
                     let name = match token {
                         // Greedy quantifier
                         Token::Question => FunctionName::Optional,
@@ -301,22 +303,31 @@ impl<'a> Parser<'a> {
                     self.next_token(); // consume notation
                 }
                 Token::LeftBrace => {
+                    /* repeat specified or range */
+
                     let (notation_quantifier, lazy) = self.continue_parse_notation_quantifier()?;
 
                     let mut args = vec![];
 
                     let name = match notation_quantifier {
                         NotationQuantifier::Repeat(n) => {
-                            args.push(FunctionCallArg::Number(n));
                             if lazy {
-                                FunctionName::RepeatLazy
-                            } else {
-                                FunctionName::Repeat
+                                return Err(Error::MessageWithLocation(
+                                    "Specified number of repetitions does not support lazy mode, i.e. '{m}?' is not allowed.".to_owned(), self.last_range));
                             }
+
+                            args.push(FunctionCallArg::Number(n));
+                            FunctionName::Repeat
                         }
                         NotationQuantifier::RepeatRange(m, n) => {
+                            if lazy && m == n {
+                                return Err(Error::MessageWithLocation(
+                                    "Specified number of repetitions does not support lazy mode, i.e. '{m,m}?' is not allowed.".to_owned(), self.last_range));
+                            }
+
                             args.push(FunctionCallArg::Number(m));
                             args.push(FunctionCallArg::Number(n));
+
                             if lazy {
                                 FunctionName::RepeatRangeLazy
                             } else {
@@ -325,6 +336,7 @@ impl<'a> Parser<'a> {
                         }
                         NotationQuantifier::AtLeast(n) => {
                             args.push(FunctionCallArg::Number(n));
+
                             if lazy {
                                 FunctionName::AtLeastLazy
                             } else {
@@ -634,10 +646,6 @@ impl<'a> Parser<'a> {
                     args.push(FunctionCallArg::Identifier(id));
                 }
                 _ => {
-                    // return Err(Error::MessageWithLocation(
-                    //     "Unsupported argument value.".to_owned(),
-                    //     self.last_range,
-                    // ));
                     let expression = self.parse_expression()?;
                     args.push(FunctionCallArg::Expression(Box::new(expression)));
                 }
@@ -889,7 +897,7 @@ fn preset_charset_name_from_str(
 
 fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionName, Error> {
     let name = match name_str {
-        // Greedy quantifier
+        // Greedy Quantifier
         "optional" => FunctionName::Optional,
         "one_or_more" => FunctionName::OneOrMore,
         "zero_or_more" => FunctionName::ZeroOrMore,
@@ -897,11 +905,10 @@ fn function_name_from_str(name_str: &str, range: &Location) -> Result<FunctionNa
         "repeat_range" => FunctionName::RepeatRange,
         "at_least" => FunctionName::AtLeast,
 
-        // Lazy quantifier
+        // Lazy Quantifier
         "optional_lazy" => FunctionName::OptionalLazy,
         "one_or_more_lazy" => FunctionName::OneOrMoreLazy,
         "zero_or_more_lazy" => FunctionName::ZeroOrMoreLazy,
-        "repeat_lazy" => FunctionName::RepeatLazy,
         "repeat_range_lazy" => FunctionName::RepeatRangeLazy,
         "at_least_lazy" => FunctionName::AtLeastLazy,
 
@@ -944,7 +951,12 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use crate::ast::{CharRange, CharSet, CharSetElement, Expression, Literal, PresetCharSetName, Program};
+    use crate::{
+        ast::{
+            CharRange, CharSet, CharSetElement, Expression, Literal, PresetCharSetName, Program,
+        },
+        error::Error,
+    };
 
     use super::parse_from_str;
 
@@ -1193,7 +1205,6 @@ zero_or_more_lazy('z')"#
 'a'{3}
 'b'{5,7}
 'c'{11,}
-'x'{3}?
 'y'{5,7}?
 'z'{11,}?
     "#,
@@ -1203,10 +1214,29 @@ zero_or_more_lazy('z')"#
             r#"repeat('a', 3)
 repeat_range('b', 5, 7)
 at_least('c', 11)
-repeat_lazy('x', 3)
 repeat_range_lazy('y', 5, 7)
 at_least_lazy('z', 11)"#
         );
+
+        // err: '{m}?' is not allowed
+        assert!(matches!(
+            parse_from_str(
+                r#"
+'a'{3}?
+"#,
+            ),
+            Err(Error::MessageWithLocation(_, _))
+        ));
+
+        // err: '{m,m}?' is not allowed
+        assert!(matches!(
+            parse_from_str(
+                r#"
+'a'{3,3}?
+"#,
+            ),
+            Err(Error::MessageWithLocation(_, _))
+        ));
     }
 
     #[test]
