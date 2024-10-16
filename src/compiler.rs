@@ -587,7 +587,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_backreference(&mut self, name: &str) -> Result<Port, Error> {
-        let match_index_option = self.image.find_match_index(name);
+        let match_index_option = self.image.get_capture_index_by_name(name);
         let match_index = if let Some(i) = match_index_option {
             i
         } else {

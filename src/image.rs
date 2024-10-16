@@ -106,11 +106,24 @@ impl Image {
         idx
     }
 
-    pub fn find_match_index(&self, name: &str) -> Option<usize> {
+    pub fn get_capture_index_by_name(&self, name: &str) -> Option<usize> {
         self.captures.iter().position(|e| match &e.name {
             Some(n) => n == name,
             None => false,
         })
+    }
+
+    pub fn get_capture_names(&self) -> Vec<Option<&String>> {
+        self.captures
+            .iter()
+            .map(|item| {
+                if let Some(name) = &item.name {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn get_number_of_captures(&self) -> usize {
@@ -661,7 +674,7 @@ stateset: $1
 # group {idx:2}"
         );
 
-        assert_eq!(image.find_match_index("foo"), Some(1));
-        assert!(image.find_match_index("bar").is_none());
+        assert_eq!(image.get_capture_index_by_name("foo"), Some(1));
+        assert!(image.get_capture_index_by_name("bar").is_none());
     }
 }

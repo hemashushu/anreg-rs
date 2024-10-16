@@ -13,7 +13,7 @@ pub struct Context<'a> {
 
     pub threads: Vec<Thread>,
     pub capture_positions: Vec<CapturePosition>, // the results of matches
-    pub counters: Vec<usize>,                // repetitions counters
+    pub counters: Vec<usize>,                    // repetitions counters
 }
 
 impl<'a> Context<'a> {
@@ -33,12 +33,6 @@ impl<'a> Context<'a> {
         self.capture_positions = vec![CapturePosition::default(); self.number_of_captures];
         self.counters = vec![0; self.number_of_counters];
     }
-
-    // pub fn get_first_capture_position(&self) -> (usize, usize) {
-    //     let cp = &self.capture_positions[0];
-    //     (cp.start, cp.end_included)
-    // }
-
 }
 
 pub struct Thread {

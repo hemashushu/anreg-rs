@@ -49,7 +49,7 @@ impl Display for Transition {
 }
 
 trait TransitionTrait {
-    fn validated(&self, context: &Context) -> ValidateResult;
+    fn check(&self, context: &Context) -> CheckResult;
 
     // Not all transitions have a fixed length, e.g.
     // the length of "a{3,5}" varies, but the
@@ -59,23 +59,17 @@ trait TransitionTrait {
     fn length(&self) -> Option<usize>;
 }
 
-pub struct ValidateResult {
-    success: bool,
-    forward: usize,
-}
-
-impl ValidateResult {
-    fn new(success: bool, forward: usize) -> Self {
-        ValidateResult { success, forward }
-    }
+pub enum CheckResult {
+    Success(/* forward */ usize),
+    Failure,
 }
 
 // Jump/Epsilon
 pub struct JumpTransition;
 
 impl TransitionTrait for JumpTransition {
-    fn validated(&self, _context: &Context) -> ValidateResult {
-        ValidateResult::new(true, 0)
+    fn check(&self, _context: &Context) -> CheckResult {
+        CheckResult::Success(0)
     }
 
     fn length(&self) -> Option<usize> {
@@ -100,9 +94,12 @@ impl CharTransition {
 }
 
 impl TransitionTrait for CharTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
-        let success = self.character == context.get_current_char();
-        ValidateResult::new(success, 1)
+    fn check(&self, context: &Context) -> CheckResult {
+        if self.character == context.get_current_char() {
+            CheckResult::Success(1)
+        } else {
+            CheckResult::Failure
+        }
     }
 
     fn length(&self) -> Option<usize> {
@@ -119,13 +116,16 @@ impl Display for CharTransition {
 pub struct SpecialCharTransition;
 
 impl TransitionTrait for SpecialCharTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // \n, \r, \u2028 or \u2029
 
         let c = context.get_current_char();
-        let success = c != '\n' && c != '\r';
-        ValidateResult::new(success, 1)
+        if c != '\n' && c != '\r' {
+            CheckResult::Success(1)
+        } else {
+            CheckResult::Failure
+        }
     }
 
     fn length(&self) -> Option<usize> {
@@ -153,8 +153,25 @@ impl StringTransition {
 }
 
 impl TransitionTrait for StringTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
-        todo!()
+    fn check(&self, context: &Context) -> CheckResult {
+        let pos = context.get_current_position();
+        if pos + self.length >= context.chars.len() {
+            CheckResult::Failure
+        } else {
+            let mut same = true;
+            for i in 0..self.length {
+                if self.chars[i] != context.get_char(i + pos) {
+                    same = false;
+                    break;
+                }
+            }
+
+            if same {
+                CheckResult::Success(self.length)
+            } else {
+                CheckResult::Failure
+            }
+        }
     }
 
     fn length(&self) -> Option<usize> {
@@ -168,7 +185,7 @@ impl Display for StringTransition {
          * convert Vec<char> into String:
          * `let s:String = chars.iter().collect()`
          * or
-         * `let s = String::from_iter(&self.chars)`
+         * `let s = String::from_iter(&chars)`
          */
         let s = String::from_iter(&self.chars);
         write!(f, "String \"{}\"", s)
@@ -180,14 +197,14 @@ pub struct CharSetTransition {
     negative: bool,
 }
 
-pub struct Range {
+pub struct CharRange {
     start: char,
     end_included: char,
 }
 
-impl Range {
+impl CharRange {
     pub fn new(start: char, end_included: char) -> Self {
-        Range {
+        CharRange {
             start,
             end_included,
         }
@@ -196,7 +213,7 @@ impl Range {
 
 pub enum CharSetItem {
     Char(char),
-    Range(Range),
+    Range(CharRange),
 }
 
 impl CharSetTransition {
@@ -246,7 +263,7 @@ pub fn add_char(items: &mut Vec<CharSetItem>, c: char) {
 }
 
 pub fn add_range(items: &mut Vec<CharSetItem>, start: char, end_included: char) {
-    items.push(CharSetItem::Range(Range::new(start, end_included)));
+    items.push(CharSetItem::Range(CharRange::new(start, end_included)));
 }
 
 pub fn add_preset_space(items: &mut Vec<CharSetItem>) {
@@ -274,7 +291,7 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
 }
 
 impl TransitionTrait for CharSetTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         let current = context.get_current_char();
         let mut found: bool = false;
 
@@ -289,7 +306,11 @@ impl TransitionTrait for CharSetTransition {
             }
         }
 
-        ValidateResult::new(found ^ self.negative, 1)
+        if found ^ self.negative {
+            CheckResult::Success(1)
+        } else {
+            CheckResult::Failure
+        }
     }
 
     fn length(&self) -> Option<usize> {
@@ -333,7 +354,7 @@ impl AssertionTransition {
 }
 
 impl TransitionTrait for AssertionTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -359,7 +380,7 @@ impl BackReferenceTransition {
 }
 
 impl TransitionTrait for BackReferenceTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -395,22 +416,22 @@ impl CaptureEndTransition {
 }
 
 impl TransitionTrait for CaptureStartTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
     fn length(&self) -> Option<usize> {
-        todo!()
+        Some(0)
     }
 }
 
 impl TransitionTrait for CaptureEndTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
     fn length(&self) -> Option<usize> {
-        todo!()
+        Some(0)
     }
 }
 
@@ -467,7 +488,7 @@ impl CounterCheckTransition {
 }
 
 impl TransitionTrait for CounterResetTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -477,7 +498,7 @@ impl TransitionTrait for CounterResetTransition {
 }
 
 impl TransitionTrait for CounterIncTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -487,7 +508,7 @@ impl TransitionTrait for CounterIncTransition {
 }
 
 impl TransitionTrait for CounterCheckTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -551,7 +572,7 @@ impl RepetitionAnchorTransition {
 }
 
 impl TransitionTrait for RepetitionAnchorTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -601,7 +622,7 @@ impl LookBehindAssertionTransition {
 }
 
 impl TransitionTrait for LookAheadAssertionTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 
@@ -611,7 +632,7 @@ impl TransitionTrait for LookAheadAssertionTransition {
 }
 
 impl TransitionTrait for LookBehindAssertionTransition {
-    fn validated(&self, context: &Context) -> ValidateResult {
+    fn check(&self, context: &Context) -> CheckResult {
         todo!()
     }
 

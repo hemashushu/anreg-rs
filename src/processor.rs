@@ -36,21 +36,74 @@ impl<'a, 'b> Instance<'a, 'b> {
         Instance { image, context }
     }
 
-    pub fn exec(&mut self, start: usize) -> Option<Vec<CaptureRange>> {
-        // let capture_ranges : Vec<CaptureRange> =  capture_positions
-        // .iter()
-        // .map(|i| CaptureRange {
-        //     start: i.start,
-        //     end: i.end_included + 1,
-        // })
-        // .collect();
+    pub fn exec(&mut self, start: usize) -> Option<Vec<MatchRange>> {
+        self.context.reset(start);
 
-        todo!()
+        // do matching
+
+        let match_ranges: Vec<MatchRange> = self
+            .context
+            .capture_positions
+            .iter()
+            .map(|i| MatchRange {
+                start: i.start,
+                end: i.end_included + 1,
+            })
+            .collect();
+
+        Some(match_ranges)
+    }
+
+    pub fn exec_with_result(&mut self, start: usize) -> Option<MatchResult> {
+        if let Some(match_ranges) = self.exec(start) {
+            let match_groups: Vec<MatchGroup> = match_ranges
+                .iter()
+                .zip(self.image.get_capture_names().iter())
+                .map(|(range, name_opt)| MatchGroup {
+                    start: range.start,
+                    end: range.end,
+                    name: if let Some(n) = *name_opt {
+                        Some(n.to_owned())
+                    } else {
+                        None
+                    },
+                    value: Self::get_sub_string(&self.context.chars, range.start, range.end),
+                })
+                .collect();
+
+            let match_result = MatchResult {
+                groups: match_groups,
+            };
+            Some(match_result)
+        } else {
+            None
+        }
+    }
+
+    fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
+        /*
+         * convert Vec<char> into String:
+         * `let s:String = chars.iter().collect()`
+         * or
+         * `let s = String::from_iter(&chars)`
+         */
+        let slice = &chars[start..end];
+        String::from_iter(slice)
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct CaptureRange {
+pub struct MatchRange {
     pub start: usize, // position included
     pub end: usize,   // position excluded
+}
+
+pub struct MatchGroup {
+    pub name: Option<String>,
+    pub value: String,
+    pub start: usize, // position included
+    pub end: usize,   // position excluded
+}
+
+pub struct MatchResult {
+    pub groups: Vec<MatchGroup>,
 }
