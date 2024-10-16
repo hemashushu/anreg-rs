@@ -22,8 +22,8 @@ use crate::transition::Transition;
 // the compile target
 pub struct Image {
     statesets: Vec<StateSet>,
-    matches: Vec<Match>,
-    counters: usize,
+    captures: Vec<Capture>,
+    number_of_counters: usize,
 }
 
 pub struct StateSet {
@@ -61,7 +61,7 @@ struct TransitionNode {
     target_state_index: usize, // the index of next state
 }
 
-struct Match {
+struct Capture {
     name: Option<String>,
 }
 
@@ -69,8 +69,8 @@ impl Image {
     pub fn new() -> Self {
         Image {
             statesets: vec![],
-            matches: vec![],
-            counters: 0,
+            captures: vec![],
+            number_of_counters: 0,
         }
     }
 
@@ -91,8 +91,8 @@ impl Image {
     }
 
     pub fn new_counter(&mut self) -> usize {
-        let counter_index = self.counters;
-        self.counters += 1;
+        let counter_index = self.number_of_counters;
+        self.number_of_counters += 1;
         counter_index
     }
 
@@ -101,16 +101,24 @@ impl Image {
     }
 
     pub fn new_match(&mut self, name: Option<String>) -> usize {
-        let idx = self.matches.len();
-        self.matches.push(Match { name });
+        let idx = self.captures.len();
+        self.captures.push(Capture { name });
         idx
     }
 
     pub fn find_match_index(&self, name: &str) -> Option<usize> {
-        self.matches.iter().position(|e| match &e.name {
+        self.captures.iter().position(|e| match &e.name {
             Some(n) => n == name,
             None => false,
         })
+    }
+
+    pub fn get_number_of_captures(&self) -> usize {
+        self.captures.len()
+    }
+
+    pub fn get_number_of_counters(&self) -> usize {
+        self.number_of_counters
     }
 
     // for debug
@@ -126,7 +134,7 @@ impl Image {
         }
 
         // matches
-        for (match_index, m) in self.matches.iter().enumerate() {
+        for (match_index, m) in self.captures.iter().enumerate() {
             let match_line = if let Some(n) = &m.name {
                 format!("# group {{idx:{}}}, {}", match_index, n)
             } else {
@@ -151,7 +159,7 @@ impl Image {
         }
 
         // matches
-        for (match_index, m) in self.matches.iter().enumerate() {
+        for (match_index, m) in self.captures.iter().enumerate() {
             let match_line = if let Some(n) = &m.name {
                 format!("# {{{}}}, {}", match_index, n)
             } else {
@@ -450,12 +458,12 @@ stateset: $1
     #[test]
     fn test_image_new_counter() {
         let mut image = Image::new();
-        assert_eq!(image.counters, 0);
+        assert_eq!(image.number_of_counters, 0);
 
         let index1 = image.new_counter();
 
         assert_eq!(index1, 0);
-        assert_eq!(image.counters, 1);
+        assert_eq!(image.number_of_counters, 1);
 
         let index2 = image.new_counter();
         let index3 = image.new_counter();

@@ -14,10 +14,10 @@ use crate::{
     parser::parse_from_str,
     transition::{
         add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
-        AssertionTransition, BackReferenceTransition, CharSetItem, CharSetTransition,
-        CharTransition, CounterCheckTransition, CounterIncTransition, CounterResetTransition,
-        JumpTransition, LookAheadAssertionTransition, LookBehindAssertionTransition,
-        MatchEndTransition, MatchStartTransition, RepetitionAnchorTransition, RepetitionType,
+        AssertionTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition,
+        CharSetItem, CharSetTransition, CharTransition, CounterCheckTransition,
+        CounterIncTransition, CounterResetTransition, JumpTransition, LookAheadAssertionTransition,
+        LookBehindAssertionTransition, RepetitionAnchorTransition, RepetitionType,
         SpecialCharTransition, StringTransition, Transition,
     },
 };
@@ -143,19 +143,19 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let match_start_transition = MatchStartTransition::new(match_index);
-        let match_end_transition = MatchEndTransition::new(match_index);
+        let match_start_transition = CaptureStartTransition::new(match_index);
+        let match_end_transition = CaptureEndTransition::new(match_index);
 
         stateset.append_transition(
             in_state_index,
             program_port.in_state_index,
-            Transition::MatchStart(match_start_transition),
+            Transition::CaptureStart(match_start_transition),
         );
 
         stateset.append_transition(
             program_port.out_state_index,
             out_state_index,
-            Transition::MatchEnd(match_end_transition),
+            Transition::CaptureEnd(match_end_transition),
         );
 
         let match_port = Port::new(in_state_index, out_state_index);
@@ -642,19 +642,19 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let match_start_transition = MatchStartTransition::new(match_index);
-        let match_end_transition = MatchEndTransition::new(match_index);
+        let match_start_transition = CaptureStartTransition::new(match_index);
+        let match_end_transition = CaptureEndTransition::new(match_index);
 
         stateset.append_transition(
             in_state_index,
             port.in_state_index,
-            Transition::MatchStart(match_start_transition),
+            Transition::CaptureStart(match_start_transition),
         );
 
         stateset.append_transition(
             port.out_state_index,
             out_state_index,
-            Transition::MatchEnd(match_end_transition),
+            Transition::CaptureEnd(match_end_transition),
         );
 
         Ok(Port::new(in_state_index, out_state_index))
@@ -986,9 +986,9 @@ mod tests {
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"
             );
@@ -1013,9 +1013,9 @@ mod tests {
 - 4
   -> 5, Char 'c'
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 7
 # {0}"
             );
@@ -1046,9 +1046,9 @@ mod tests {
 - 6
   -> 7, Char 'd'
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 9
 # {0}"
             );
@@ -1085,9 +1085,9 @@ mod tests {
 - 10
   -> 11, Char 'f'
 - 11
-  -> 13, Match end {0}
+  -> 13, Capture end {0}
 > 12
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 13
 # {0}"
             );
@@ -1116,9 +1116,9 @@ mod tests {
   -> 0, Jump
   -> 2, Jump
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 4, Match start {0}
+  -> 4, Capture start {0}
 < 7
 # {0}"
             );
@@ -1156,9 +1156,9 @@ mod tests {
   -> 0, Jump
   -> 6, Jump
 - 9
-  -> 11, Match end {0}
+  -> 11, Capture end {0}
 > 10
-  -> 8, Match start {0}
+  -> 8, Capture start {0}
 < 11
 # {0}"
             );
@@ -1193,9 +1193,9 @@ mod tests {
   -> 4, Jump
   -> 6, Jump
 - 9
-  -> 11, Match end {0}
+  -> 11, Capture end {0}
 > 10
-  -> 8, Match start {0}
+  -> 8, Capture start {0}
 < 11
 # {0}"
             );
@@ -1231,9 +1231,9 @@ mod tests {
 - 8
   -> 9, Char 'd'
 - 9
-  -> 11, Match end {0}
+  -> 11, Capture end {0}
 > 10
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 11
 # {0}"
             );
@@ -1263,9 +1263,9 @@ mod tests {
   -> 0, Jump
   -> 4, Jump
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 6, Match start {0}
+  -> 6, Capture start {0}
 < 9
 # {0}"
             );
@@ -1288,9 +1288,9 @@ mod tests {
 - 2
   -> 3, Any char
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 5
 # {0}"
             );
@@ -1321,9 +1321,9 @@ mod tests {
 - 6
   -> 7, Charset ['0'..'9']
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 9
 # {0}"#
             );
@@ -1352,9 +1352,9 @@ mod tests {
 - 6
   -> 7, Charset !['0'..'9']
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 9
 # {0}"#
             );
@@ -1374,9 +1374,9 @@ mod tests {
 - 0
   -> 1, Charset ['a', '0'..'7']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"
             );
@@ -1393,9 +1393,9 @@ mod tests {
 - 0
   -> 1, Charset !['a', '0'..'7']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"
             );
@@ -1411,9 +1411,9 @@ mod tests {
                 r#"- 0
   -> 1, Charset ['A'..'Z', 'a'..'z', '0'..'9', '_', ' ', '\t', '\r', '\n']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"#
             );
@@ -1430,9 +1430,9 @@ mod tests {
 - 0
   -> 1, Charset ['a', 'x'..'z']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"
             );
@@ -1449,9 +1449,9 @@ mod tests {
                 r#"- 0
   -> 1, Charset ['+', '-', '0'..'9', 'a'..'f', ' ', '\t', '\r', '\n']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"#
             );
@@ -1473,9 +1473,9 @@ define(letter, ['a'..'f', char_space])
                 r#"- 0
   -> 1, Charset ['+', '-', '0'..'9', 'a'..'f', ' ', '\t', '\r', '\n']
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"#
             );
@@ -1515,9 +1515,9 @@ define(letter, ['a'..'f', char_space])
 - 2
   -> 3, Char 'a'
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 5
 # {0}"
             );
@@ -1541,9 +1541,9 @@ define(letter, ['a'..'f', char_space])
 - 2
   -> 3, Char 'a'
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 5
 # {0}"
             );
@@ -1583,21 +1583,21 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {1}
+  -> 3, Capture end {1}
 - 2
-  -> 0, Match start {1}
+  -> 0, Capture start {1}
 - 3
   -> 6, Jump
 - 4
   -> 5, Char 'b'
 - 5
-  -> 7, Match end {2}
+  -> 7, Capture end {2}
 - 6
-  -> 4, Match start {2}
+  -> 4, Capture start {2}
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 9
 # {0}
 # {1}, foo
@@ -1621,9 +1621,9 @@ define(letter, ['a'..'f', char_space])
 - 2
   -> 3, Char 'b'
 - 3
-  -> 5, Match end {1}
+  -> 5, Capture end {1}
 - 4
-  -> 0, Match start {1}
+  -> 0, Capture start {1}
 - 5
   -> 12, Jump
 - 6
@@ -1638,13 +1638,13 @@ define(letter, ['a'..'f', char_space])
   -> 6, Jump
   -> 8, Jump
 - 11
-  -> 13, Match end {2}
+  -> 13, Capture end {2}
 - 12
-  -> 10, Match start {2}
+  -> 10, Capture start {2}
 - 13
-  -> 15, Match end {0}
+  -> 15, Capture end {0}
 > 14
-  -> 4, Match start {0}
+  -> 4, Capture start {0}
 < 15
 # {0}
 # {1}, foo
@@ -1663,17 +1663,17 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {2}
+  -> 3, Capture end {2}
 - 2
-  -> 0, Match start {2}
+  -> 0, Capture start {2}
 - 3
-  -> 5, Match end {1}
+  -> 5, Capture end {1}
 - 4
-  -> 2, Match start {1}
+  -> 2, Capture start {1}
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 4, Match start {0}
+  -> 4, Capture start {0}
 < 7
 # {0}
 # {1}, bar
@@ -1692,17 +1692,17 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {2}
+  -> 3, Capture end {2}
 - 2
-  -> 0, Match start {2}
+  -> 0, Capture start {2}
 - 3
-  -> 5, Match end {1}
+  -> 5, Capture end {1}
 - 4
-  -> 2, Match start {1}
+  -> 2, Capture start {1}
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 4, Match start {0}
+  -> 4, Capture start {0}
 < 7
 # {0}
 # {1}, bar
@@ -1724,21 +1724,21 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {1}
+  -> 3, Capture end {1}
 - 2
-  -> 0, Match start {1}
+  -> 0, Capture start {1}
 - 3
   -> 6, Jump
 - 4
   -> 5, Char 'b'
 - 5
-  -> 7, Match end {2}
+  -> 7, Capture end {2}
 - 6
-  -> 4, Match start {2}
+  -> 4, Capture start {2}
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 9
 # {0}
 # {1}
@@ -1761,9 +1761,9 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {1}
+  -> 3, Capture end {1}
 - 2
-  -> 0, Match start {1}
+  -> 0, Capture start {1}
 - 3
   -> 4, Jump
 - 4
@@ -1773,9 +1773,9 @@ define(letter, ['a'..'f', char_space])
 - 6
   -> 7, Back reference {1}
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 9
 # {0}
 # {1}, foo"
@@ -1802,9 +1802,9 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
   -> 3, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 # {0}"
             );
@@ -1826,9 +1826,9 @@ define(letter, ['a'..'f', char_space])
   -> 3, Jump
   -> 0, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 # {0}"
             );
@@ -1853,9 +1853,9 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
   -> 3, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 # {0}"
             );
@@ -1877,9 +1877,9 @@ define(letter, ['a'..'f', char_space])
   -> 3, Jump
   -> 0, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 # {0}"
             );
@@ -1905,9 +1905,9 @@ define(letter, ['a'..'f', char_space])
   -> 3, Repetition anchor %0, threshold 1
   -> 5, Counter check %0, from 1, to MAX
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -1933,9 +1933,9 @@ define(letter, ['a'..'f', char_space])
   -> 5, Counter check %0, from 1, to MAX
   -> 3, Jump
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -1966,9 +1966,9 @@ define(letter, ['a'..'f', char_space])
   -> 2, Jump
   -> 7, Jump
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 6, Match start {0}
+  -> 6, Capture start {0}
 < 9
 # {0}"
             );
@@ -1999,9 +1999,9 @@ define(letter, ['a'..'f', char_space])
   -> 7, Jump
   -> 2, Jump
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 6, Match start {0}
+  -> 6, Capture start {0}
 < 9
 # {0}"
             );
@@ -2040,9 +2040,9 @@ define(letter, ['a'..'f', char_space])
   -> 11, Counter check %1, from 1, to MAX
   -> 9, Jump
 - 11
-  -> 13, Match end {0}
+  -> 13, Capture end {0}
 > 12
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 13
 # {0}"
             );
@@ -2071,9 +2071,9 @@ define(letter, ['a'..'f', char_space])
   -> 5, Counter check %0, times 2
   -> 3, Jump
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -2090,9 +2090,9 @@ define(letter, ['a'..'f', char_space])
 - 0
   -> 1, Char 'a'
 - 1
-  -> 3, Match end {0}
+  -> 3, Capture end {0}
 > 2
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 3
 # {0}"
             );
@@ -2107,9 +2107,9 @@ define(letter, ['a'..'f', char_space])
                 s,
                 "\
 - 0
-  -> 2, Match end {0}
+  -> 2, Capture end {0}
 > 1
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 2
 # {0}"
             );
@@ -2138,9 +2138,9 @@ define(letter, ['a'..'f', char_space])
   -> 3, Repetition anchor %0, threshold 3
   -> 5, Counter check %0, from 3, to 5
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -2166,9 +2166,9 @@ define(letter, ['a'..'f', char_space])
   -> 5, Counter check %0, from 3, to 5
   -> 3, Jump
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -2215,9 +2215,9 @@ define(letter, ['a'..'f', char_space])
   -> 2, Jump
   -> 7, Jump
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 6, Match start {0}
+  -> 6, Capture start {0}
 < 9
 # {0}"
             );
@@ -2248,9 +2248,9 @@ define(letter, ['a'..'f', char_space])
   -> 7, Jump
   -> 2, Jump
 - 7
-  -> 9, Match end {0}
+  -> 9, Capture end {0}
 > 8
-  -> 6, Match start {0}
+  -> 6, Capture start {0}
 < 9
 # {0}"
             );
@@ -2281,9 +2281,9 @@ define(letter, ['a'..'f', char_space])
                 s,
                 "\
 - 0
-  -> 2, Match end {0}
+  -> 2, Capture end {0}
 > 1
-  -> 0, Match start {0}
+  -> 0, Capture start {0}
 < 2
 # {0}"
             );
@@ -2312,9 +2312,9 @@ define(letter, ['a'..'f', char_space])
   -> 3, Repetition anchor %0, threshold 3
   -> 5, Counter check %0, from 3, to MAX
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -2340,9 +2340,9 @@ define(letter, ['a'..'f', char_space])
   -> 5, Counter check %0, from 3, to MAX
   -> 3, Jump
 - 5
-  -> 7, Match end {0}
+  -> 7, Capture end {0}
 > 6
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 7
 # {0}"
             );
@@ -2399,9 +2399,9 @@ stateset: $0
 - 2
   -> 0, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 stateset: $1
 > 0
@@ -2427,9 +2427,9 @@ stateset: $0
 - 2
   -> 0, Jump
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 stateset: $1
 > 0
@@ -2458,9 +2458,9 @@ stateset: $0
 - 2
   -> 0, Look behind $1, pattern length 0
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 stateset: $1
 > 0
@@ -2486,9 +2486,9 @@ stateset: $0
 - 2
   -> 0, Look behind negative $1, pattern length 0
 - 3
-  -> 5, Match end {0}
+  -> 5, Capture end {0}
 > 4
-  -> 2, Match start {0}
+  -> 2, Capture start {0}
 < 5
 stateset: $1
 > 0

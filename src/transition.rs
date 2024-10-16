@@ -16,8 +16,8 @@ pub enum Transition {
     CharSet(CharSetTransition),
     BackReference(BackReferenceTransition),
     Assertion(AssertionTransition),
-    MatchStart(MatchStartTransition),
-    MatchEnd(MatchEndTransition),
+    CaptureStart(CaptureStartTransition),
+    CaptureEnd(CaptureEndTransition),
     CounterReset(CounterResetTransition),
     CounterInc(CounterIncTransition),
     CounterCheck(CounterCheckTransition),
@@ -36,8 +36,8 @@ impl Display for Transition {
             Transition::SpecialChar(s) => write!(f, "{}", s),
             Transition::BackReference(b) => write!(f, "{}", b),
             Transition::Assertion(a) => write!(f, "{}", a),
-            Transition::MatchStart(m) => write!(f, "{}", m),
-            Transition::MatchEnd(m) => write!(f, "{}", m),
+            Transition::CaptureStart(m) => write!(f, "{}", m),
+            Transition::CaptureEnd(m) => write!(f, "{}", m),
             Transition::CounterReset(c) => write!(f, "{}", c),
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
@@ -167,6 +167,8 @@ impl Display for StringTransition {
         /*
          * convert Vec<char> into String:
          * `let s:String = chars.iter().collect()`
+         * or
+         * `let s = String::from_iter(&self.chars)`
          */
         let s = String::from_iter(&self.chars);
         write!(f, "String \"{}\"", s)
@@ -347,12 +349,12 @@ impl Display for AssertionTransition {
 }
 
 pub struct BackReferenceTransition {
-    match_index: usize,
+    capture_index: usize,
 }
 
 impl BackReferenceTransition {
-    pub fn new(match_index: usize) -> Self {
-        BackReferenceTransition { match_index }
+    pub fn new(capture_index: usize) -> Self {
+        BackReferenceTransition { capture_index }
     }
 }
 
@@ -368,31 +370,31 @@ impl TransitionTrait for BackReferenceTransition {
 
 impl Display for BackReferenceTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Back reference {{{}}}", self.match_index)
+        write!(f, "Back reference {{{}}}", self.capture_index)
     }
 }
 
-pub struct MatchStartTransition {
-    match_index: usize,
+pub struct CaptureStartTransition {
+    capture_index: usize,
 }
 
-pub struct MatchEndTransition {
-    match_index: usize,
+pub struct CaptureEndTransition {
+    capture_index: usize,
 }
 
-impl MatchStartTransition {
-    pub fn new(match_index: usize) -> Self {
-        MatchStartTransition { match_index }
+impl CaptureStartTransition {
+    pub fn new(capture_index: usize) -> Self {
+        CaptureStartTransition { capture_index }
     }
 }
 
-impl MatchEndTransition {
-    pub fn new(match_index: usize) -> Self {
-        MatchEndTransition { match_index }
+impl CaptureEndTransition {
+    pub fn new(capture_index: usize) -> Self {
+        CaptureEndTransition { capture_index }
     }
 }
 
-impl TransitionTrait for MatchStartTransition {
+impl TransitionTrait for CaptureStartTransition {
     fn validated(&self, context: &Context) -> ValidateResult {
         todo!()
     }
@@ -402,7 +404,7 @@ impl TransitionTrait for MatchStartTransition {
     }
 }
 
-impl TransitionTrait for MatchEndTransition {
+impl TransitionTrait for CaptureEndTransition {
     fn validated(&self, context: &Context) -> ValidateResult {
         todo!()
     }
@@ -412,15 +414,15 @@ impl TransitionTrait for MatchEndTransition {
     }
 }
 
-impl Display for MatchStartTransition {
+impl Display for CaptureStartTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Match start {{{}}}", self.match_index)
+        write!(f, "Capture start {{{}}}", self.capture_index)
     }
 }
 
-impl Display for MatchEndTransition {
+impl Display for CaptureEndTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Match end {{{}}}", self.match_index)
+        write!(f, "Capture end {{{}}}", self.capture_index)
     }
 }
 

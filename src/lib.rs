@@ -4,6 +4,8 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+use error::Error;
+
 mod ast;
 mod charposition;
 mod commentcleaner;
@@ -21,4 +23,5 @@ mod peekableiter;
 mod token;
 mod transition;
 
-pub use compiler::compile_from_str;
+pub mod processor;
+pub mod matcher;

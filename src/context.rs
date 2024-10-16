@@ -4,22 +4,67 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-pub struct Context {
-    pub text: Vec<char>, // the source text
-    pub length: usize,   // the length of source text
+use std::vec;
 
-    pub cursors: Vec<Cursor>, // the `Cursor` stack.
-    pub position: usize,      // it is sync to the position of the last cursor
-    pub results: Vec<Result>, // the results of matches
-    pub counters: Vec<usize>, // repetitions counters
+pub struct Context<'a> {
+    pub chars: &'a [char], // the source text
+    number_of_captures: usize,
+    number_of_counters: usize,
+
+    pub threads: Vec<Thread>,
+    pub capture_positions: Vec<CapturePosition>, // the results of matches
+    pub counters: Vec<usize>,                // repetitions counters
+}
+
+impl<'a> Context<'a> {
+    pub fn new(chars: &'a [char], number_of_captures: usize, number_of_counters: usize) -> Self {
+        Context {
+            chars,
+            number_of_captures,
+            number_of_counters,
+            threads: vec![],
+            capture_positions: vec![],
+            counters: vec![],
+        }
+    }
+
+    pub fn reset(&mut self, start: usize) {
+        self.threads = vec![Thread::new(start, self.chars.len(), start)];
+        self.capture_positions = vec![CapturePosition::default(); self.number_of_captures];
+        self.counters = vec![0; self.number_of_counters];
+    }
+
+    // pub fn get_first_capture_position(&self) -> (usize, usize) {
+    //     let cp = &self.capture_positions[0];
+    //     (cp.start, cp.end_included)
+    // }
+
+}
+
+pub struct Thread {
+    pub start: usize,              // poisition included
+    pub end: usize,                // position excluded
+    pub stateset_index: usize,     //
+    pub cursor_stack: Vec<Cursor>, // the `Cursor` stack.
+}
+
+impl Thread {
+    pub fn new(start: usize, end: usize, stateset_index: usize) -> Thread {
+        Thread {
+            start,
+            end,
+            stateset_index,
+            cursor_stack: vec![Cursor::new(start, end)],
+        }
+    }
 }
 
 // The `Cursor` can only be moved to left as a whole,
 // and cannot exceed the `position` of the previous `Cursor` (if it exists).
 // If the previous `Cursor` does not exist, it cannot be moved.
 pub struct Cursor {
-    pub start: usize, // the start poisition
-    pub end: usize,   // the end position, it is the length of source text.
+    pub start: usize, // position included
+    pub end: usize,   // position excluded.
 
     // store the positions of greedy repetition for
     // backtracking.
@@ -29,6 +74,17 @@ pub struct Cursor {
     // unlike the `start` position of `Cursor`, this value can only
     // be increased (moved to right).
     pub position: usize,
+}
+
+impl Cursor {
+    pub fn new(start: usize, end: usize) -> Self {
+        Cursor {
+            start,
+            end,
+            anchors: vec![],
+            position: start,
+        }
+    }
 }
 
 // the Cursor stack demo:
@@ -84,25 +140,41 @@ pub struct Cursor {
 // |==================*=================| <-- cursor 0
 //                    ^__ position (move to right only)
 
-pub struct Result {
-    start: usize,
-    end_included: usize,
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
+pub struct CapturePosition {
+    pub start: usize,        // position included
+    pub end_included: usize, // position included
 }
 
-impl Context {
+impl<'a> Context<'a> {
+    #[inline]
+    pub fn get_current_thread(&self) -> &Thread {
+        self.threads.last().unwrap()
+    }
+
+    #[inline]
+    pub fn get_current_cursor(&self) -> &Cursor {
+        self.get_current_thread().cursor_stack.last().unwrap()
+    }
+
+    #[inline]
+    pub fn get_current_position(&self) -> usize {
+        self.get_current_cursor().position
+    }
+
     #[inline]
     pub fn get_current_char(&self) -> char {
-        self.get_char(self.position)
+        self.get_char(self.get_current_position())
     }
 
     #[inline]
     pub fn is_first_char(&self) -> bool {
-        self.position == 0
+        self.get_current_position() == self.get_current_thread().start
     }
 
     #[inline]
     pub fn is_last_char(&self) -> bool {
-        self.position == (self.length - 1)
+        self.get_current_position() == self.get_current_thread().end - 1
     }
 
     pub fn is_word_bound(&self) -> bool {
@@ -119,7 +191,7 @@ impl Context {
 
     #[inline]
     pub fn get_char(&self, position: usize) -> char {
-        self.text[position]
+        self.chars[position]
     }
 
     #[inline]
@@ -127,7 +199,7 @@ impl Context {
         if self.is_first_char() {
             '\0'
         } else {
-            self.get_char(self.position - 1)
+            self.get_char(self.get_current_position() - 1)
         }
     }
 
@@ -136,7 +208,7 @@ impl Context {
         if self.is_last_char() {
             '\0'
         } else {
-            self.get_char(self.position + 1)
+            self.get_char(self.get_current_position() + 1)
         }
     }
 

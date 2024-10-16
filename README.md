@@ -12,23 +12,24 @@ Designed with user-friendliness in mind, _ANREG_ requires no prior knowledge to 
 
 <!-- code_chunk_output -->
 
-- [Overview](#overview)
-- [Quick Start by Examples](#quick-start-by-examples)
 - [Getting Started in 30 Minutes](#getting-started-in-30-minutes)
+- [Motivation](#motivation)
+- [Quick Start by Examples](#quick-start-by-examples)
 - [Comparison with Traditional Regex](#comparison-with-traditional-regex)
 - [The ANREG Language Reference](#the-anreg-language-reference)
 - [How the ANREG Engine Works](#how-the-anreg-engine-works)
 - [The `anreg-rs` Library](#the-anreg-rs-library)
+- [Resource](#resource)
 
 <!-- /code_chunk_output -->
 
-## Overview
+## Getting Started in 30 Minutes
 
 _ANREG_ can be considered as a programming language that consists only of literals and functions, without variables and control flow. Its primary purpose is to search for strings within a large of text that match a specified pattern, or to valify whether a given text conforms to a particular pattern.
 
-## Quick Start by Examples
+## Motivation
 
-## Getting Started in 30 Minutes
+## Quick Start by Examples
 
 ## Comparison with Traditional Regex
 
@@ -37,3 +38,5 @@ _ANREG_ can be considered as a programming language that consists only of litera
 ## How the ANREG Engine Works
 
 ## The `anreg-rs` Library
+
+## Resource
