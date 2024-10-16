@@ -6,11 +6,11 @@
 
 use crate::{
     error::Error,
-    processor::{MatchResult, Processor},
+    process::{MatchResult, Process},
 };
 
 pub fn match_one(text: &str, pattern: &str) -> Result<Option<MatchResult>, Error> {
-    let processor = Processor::new(pattern)?;
+    let processor = Process::new(pattern)?;
     let chars: Vec<char> = text.chars().collect();
     let chars_ref = &chars;
     let mut instance = processor.new_instance(chars_ref);
@@ -19,7 +19,7 @@ pub fn match_one(text: &str, pattern: &str) -> Result<Option<MatchResult>, Error
 }
 
 pub fn match_all(text: &str, pattern: &str) -> Result<Vec<MatchResult>, Error> {
-    let processor = Processor::new(pattern)?;
+    let processor = Process::new(pattern)?;
     let chars: Vec<char> = text.chars().collect();
     let mut instance = processor.new_instance(&chars);
     let mut start: usize = 0;
@@ -37,7 +37,7 @@ pub fn match_all(text: &str, pattern: &str) -> Result<Vec<MatchResult>, Error> {
 }
 
 pub fn test(text: &str, pattern: &str) -> Result<bool, Error> {
-    let processor = Processor::new(pattern)?;
+    let processor = Process::new(pattern)?;
     let chars: Vec<char> = text.chars().collect();
     let mut instance = processor.new_instance(&chars);
 

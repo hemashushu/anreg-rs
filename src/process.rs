@@ -6,14 +6,14 @@
 
 use crate::{compiler::compile_from_str, context::Context, error::Error, image::Image};
 
-pub struct Processor {
+pub struct Process {
     image: Image,
 }
 
-impl Processor {
+impl Process {
     pub fn new(pattern: &str) -> Result<Self, Error> {
         let image = compile_from_str(pattern)?;
-        Ok(Processor { image })
+        Ok(Process { image })
     }
 
     pub fn new_instance<'a, 'b: 'a>(&'a self, chars: &'b [char]) -> Instance {

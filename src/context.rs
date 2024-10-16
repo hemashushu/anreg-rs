@@ -8,8 +8,8 @@ use std::vec;
 
 pub struct Context<'a> {
     pub chars: &'a [char], // the source text
-    number_of_captures: usize,
-    number_of_counters: usize,
+    number_of_captures: usize, // for reseting 'capture_positions'
+    number_of_counters: usize, // for reseting 'counters'
 
     pub threads: Vec<Thread>,
     pub capture_positions: Vec<CapturePosition>, // the results of matches

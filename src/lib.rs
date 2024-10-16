@@ -22,4 +22,4 @@ mod token;
 mod transition;
 
 pub mod matcher;
-pub mod processor;
+pub mod process;
