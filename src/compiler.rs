@@ -62,7 +62,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn get_current_stateset(&mut self) -> &mut StateSet {
-        self.image.get_stateset_ref_mut(self.stateset_index)
+        &mut self.image.statesets[self.stateset_index]
     }
 
     fn compile(&mut self) -> Result<(), Error> {
@@ -135,7 +135,7 @@ impl<'a> Compiler<'a> {
             )
         };
 
-        //     match start     comp        match end
+        //     match start     box        match end
         //        trans    /-----------\    trans
         //  --o===========--o in  out o--==========o--
         //   in            \-----------/           out
@@ -633,7 +633,7 @@ impl<'a> Compiler<'a> {
         let match_index = self.image.new_match(name_option);
         let port = self.emit_expression(expression)?;
 
-        //     match start      comp        match end
+        //     match start      box        match end
         //   in   trans    /-----------\    trans  out
         //  --o===========--o in  out o--==========o--
         //                 \-----------/
@@ -663,14 +663,22 @@ impl<'a> Compiler<'a> {
     fn emit_optional(&mut self, expression: &Expression, is_lazy: bool) -> Result<Port, Error> {
         // greedy optional
         //
-        //                    comp
+        //                    box
         //   in     jmp  /-----------\  jmp out
         //  --o|o--=====--o in  out o--=====o--
         //     |o--\     \-----------/      ^
-        //      ^  |                        |
-        //      |  \========================/
-        //      |           jump trans
-        //      \ switch these two trans for lazy matching
+        //         |                        |
+        //         \========================/
+        //                  jump trans
+
+        // lazy optional
+        //                  jump trans
+        //         /========================\
+        //         |                        |
+        //     |o--/     /-----------\      v
+        //  --o|o--=====--o in  out o--=====o--
+        //   in     jmp  \-----------/  jmp out
+        //                    box
 
         let port = self.emit_expression(expression)?;
         self.continue_emit_optional(port, is_lazy)
@@ -741,17 +749,26 @@ impl<'a> Compiler<'a> {
     ) -> Result<Port, Error> {
         // lazy repetition
         //                                         counter
-        //                             comp      | inc
+        //                             box       | inc
         //   in        left  jump  /-----------\ v trans  right     out
         //  --o----------o--======--o in  out o-----------o|o-------o--
         //      ^ cnter  ^         \-----------/           |o-\  ^ counter
         //      | reset  |                                    |  | check
         //        trans  \====================================/    trans
-        //                               ^                    ^
-        //  repetition anchor trans for  |                    |
-        //  greedy range repetition,     |                    |
-        //  jump trans for other reps.   /                    |
-        //     switch these two trans pos for greedy matching |
+        //                            jump trans
+        //
+        // greedy repetion
+        //                     repetition anchor trans
+        //               /------------------------------------\
+        //               |                         counter    |
+        //               |             box       | inc        |
+        //   in          v   jump  /-----------\ v trans      |
+        //  --o----------o--======--o in  out o-----------o|o-/   anchor  out
+        //      ^ cnter  left      \-----------/     right |o-------o--------o|o--
+        //      | reset                                        ^    ^         |o-\
+        //        trans                          counter check |    |            |
+        //                                               trans      \------------/
+        //                                                          backtrack trans
 
         let port = self.emit_expression(expression)?;
         let counter_index = self.image.new_counter();
@@ -969,7 +986,7 @@ impl Port {
 mod tests {
     use pretty_assertions::assert_str_eq;
 
-    use crate::error::Error;
+    use crate::{error::Error, image::MAIN_STATESET_INDEX};
 
     use super::compile_from_str;
 
@@ -1523,8 +1540,8 @@ define(letter, ['a'..'f', char_space])
             );
 
             // check the 'fixed_start' and 'fixed_end'
-            assert!(image.get_stateset_ref_mut(0).fixed_start);
-            assert!(!image.get_stateset_ref_mut(0).fixed_end);
+            assert!(image.statesets[MAIN_STATESET_INDEX].fixed_start);
+            assert!(!image.statesets[MAIN_STATESET_INDEX].fixed_end);
         }
 
         {
@@ -1549,8 +1566,8 @@ define(letter, ['a'..'f', char_space])
             );
 
             // check the 'fixed_start' and 'fixed_end'
-            assert!(!image.get_stateset_ref_mut(0).fixed_start);
-            assert!(image.get_stateset_ref_mut(0).fixed_end);
+            assert!(!image.statesets[MAIN_STATESET_INDEX].fixed_start);
+            assert!(image.statesets[MAIN_STATESET_INDEX].fixed_end);
         }
 
         // err: assert "start" can only be present at the beginning of expression

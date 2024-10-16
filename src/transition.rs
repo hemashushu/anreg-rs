@@ -6,7 +6,7 @@
 
 use std::fmt::Display;
 
-use crate::{ast::AssertionName, context::Context};
+use crate::{ast::AssertionName, instance::Instance};
 
 pub enum Transition {
     Jump(JumpTransition),
@@ -16,12 +16,19 @@ pub enum Transition {
     CharSet(CharSetTransition),
     BackReference(BackReferenceTransition),
     Assertion(AssertionTransition),
+
+    // capture
     CaptureStart(CaptureStartTransition),
     CaptureEnd(CaptureEndTransition),
+
+    // reset the associated counter and the list of anchors
     CounterReset(CounterResetTransition),
     CounterInc(CounterIncTransition),
     CounterCheck(CounterCheckTransition),
     RepetionAnchor(RepetitionAnchorTransition),
+    Backtrack(BacktrackingTransition),
+
+    // assertion
     LookAheadAssertion(LookAheadAssertionTransition),
     LookBehindAssertion(LookBehindAssertionTransition),
 }
@@ -42,6 +49,7 @@ impl Display for Transition {
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
             Transition::RepetionAnchor(r) => write!(f, "{}", r),
+            Transition::Backtrack(b) => write!(f, "{}", b),
             Transition::LookAheadAssertion(l) => write!(f, "{}", l),
             Transition::LookBehindAssertion(l) => write!(f, "{}", l),
         }
@@ -49,14 +57,14 @@ impl Display for Transition {
 }
 
 trait TransitionTrait {
-    fn check(&self, context: &Context) -> CheckResult;
+    fn check(&self, context: &Instance) -> CheckResult;
 
     // Not all transitions have a fixed length, e.g.
     // the length of "a{3,5}" varies, but the
     // "a{3}" is 3.
     //
     // Returns `None` for a non-fixed length.
-    fn length(&self) -> Option<usize>;
+    // fn length(&self) -> Option<usize>;
 }
 
 pub enum CheckResult {
@@ -68,13 +76,13 @@ pub enum CheckResult {
 pub struct JumpTransition;
 
 impl TransitionTrait for JumpTransition {
-    fn check(&self, _context: &Context) -> CheckResult {
+    fn check(&self, _context: &Instance) -> CheckResult {
         CheckResult::Success(0)
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl Display for JumpTransition {
@@ -94,7 +102,7 @@ impl CharTransition {
 }
 
 impl TransitionTrait for CharTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         if self.character == context.get_current_char() {
             CheckResult::Success(1)
         } else {
@@ -102,9 +110,9 @@ impl TransitionTrait for CharTransition {
         }
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(1)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(1)
+    // }
 }
 
 impl Display for CharTransition {
@@ -116,7 +124,7 @@ impl Display for CharTransition {
 pub struct SpecialCharTransition;
 
 impl TransitionTrait for SpecialCharTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // \n, \r, \u2028 or \u2029
 
@@ -128,9 +136,9 @@ impl TransitionTrait for SpecialCharTransition {
         }
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(1)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(1)
+    // }
 }
 
 impl Display for SpecialCharTransition {
@@ -153,7 +161,7 @@ impl StringTransition {
 }
 
 impl TransitionTrait for StringTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         let pos = context.get_current_position();
         if pos + self.length >= context.chars.len() {
             CheckResult::Failure
@@ -174,9 +182,9 @@ impl TransitionTrait for StringTransition {
         }
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(self.length)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(self.length)
+    // }
 }
 
 impl Display for StringTransition {
@@ -291,7 +299,7 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
 }
 
 impl TransitionTrait for CharSetTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         let current = context.get_current_char();
         let mut found: bool = false;
 
@@ -313,9 +321,9 @@ impl TransitionTrait for CharSetTransition {
         }
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(1)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(1)
+    // }
 }
 
 impl Display for CharSetTransition {
@@ -354,13 +362,13 @@ impl AssertionTransition {
 }
 
 impl TransitionTrait for AssertionTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl Display for AssertionTransition {
@@ -380,13 +388,13 @@ impl BackReferenceTransition {
 }
 
 impl TransitionTrait for BackReferenceTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        None
-    }
+    // fn length(&self) -> Option<usize> {
+    //     None
+    // }
 }
 
 impl Display for BackReferenceTransition {
@@ -416,23 +424,23 @@ impl CaptureEndTransition {
 }
 
 impl TransitionTrait for CaptureStartTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl TransitionTrait for CaptureEndTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl Display for CaptureStartTransition {
@@ -488,33 +496,33 @@ impl CounterCheckTransition {
 }
 
 impl TransitionTrait for CounterResetTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl TransitionTrait for CounterIncTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl TransitionTrait for CounterCheckTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl Display for CounterResetTransition {
@@ -572,13 +580,13 @@ impl RepetitionAnchorTransition {
 }
 
 impl TransitionTrait for RepetitionAnchorTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(0)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(0)
+    // }
 }
 
 impl Display for RepetitionAnchorTransition {
@@ -587,6 +595,39 @@ impl Display for RepetitionAnchorTransition {
             f,
             "Repetition anchor %{}, threshold {}",
             self.counter_index, self.threshold
+        )
+    }
+}
+
+pub struct BacktrackingTransition {
+    counter_index: usize,
+    anchor_state_index: usize,
+}
+
+impl BacktrackingTransition {
+    pub fn new(counter_index: usize, anchor_state_index: usize) -> Self {
+        BacktrackingTransition {
+            counter_index,
+            anchor_state_index,
+        }
+    }
+}
+
+impl TransitionTrait for BacktrackingTransition {
+    fn check(&self, context: &Instance) -> CheckResult {
+        // move back the position by anchor,
+        // and build a stackframe for the target state node
+        // todo
+        CheckResult::Failure
+    }
+}
+
+impl Display for BacktrackingTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Backtrack %{} -> {}",
+            self.counter_index, self.anchor_state_index
         )
     }
 }
@@ -622,23 +663,23 @@ impl LookBehindAssertionTransition {
 }
 
 impl TransitionTrait for LookAheadAssertionTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        None
-    }
+    // fn length(&self) -> Option<usize> {
+    //     None
+    // }
 }
 
 impl TransitionTrait for LookBehindAssertionTransition {
-    fn check(&self, context: &Context) -> CheckResult {
+    fn check(&self, context: &Instance) -> CheckResult {
         todo!()
     }
 
-    fn length(&self) -> Option<usize> {
-        Some(self.pattern_chars_length)
-    }
+    // fn length(&self) -> Option<usize> {
+    //     Some(self.pattern_chars_length)
+    // }
 }
 
 impl Display for LookAheadAssertionTransition {

@@ -21,6 +21,8 @@ use crate::transition::Transition;
 // |-- state set
  */
 
+pub const MAIN_STATESET_INDEX: usize = 0;
+
 // image
 // |-- state set --\
 // |            |-- state node --\
@@ -36,7 +38,7 @@ use crate::transition::Transition;
 
 // the compile target
 pub struct Image {
-    statesets: Vec<StateSet>,
+    pub statesets: Vec<StateSet>,
     captures: Vec<Capture>,
     number_of_counters: usize,
 }
@@ -51,6 +53,7 @@ pub struct StateSet {
 
     // it is true when the expression ends with `$`, or encounters is_after
     pub fixed_end: bool,
+
     /*
      * object references
      */
@@ -111,9 +114,9 @@ impl Image {
         counter_index
     }
 
-    pub fn get_stateset_ref_mut(&mut self, idx: usize) -> &mut StateSet {
-        &mut self.statesets[idx]
-    }
+    // pub fn get_stateset_ref_mut(&mut self, idx: usize) -> &mut StateSet {
+    //     &mut self.statesets[idx]
+    // }
 
     pub fn new_match(&mut self, name: Option<String>) -> usize {
         let idx = self.captures.len();
@@ -464,7 +467,7 @@ mod tests {
         // create a stateset
         {
             let stateset_index = image.new_stateset();
-            let stateset = image.get_stateset_ref_mut(stateset_index);
+            let stateset = &mut image.statesets[stateset_index];
 
             // create a state
             stateset.new_state();
@@ -501,7 +504,7 @@ mod tests {
         // create another stateset
         {
             let stateset_index = image.new_stateset();
-            let stateset = image.get_stateset_ref_mut(stateset_index);
+            let stateset = &mut image.statesets[stateset_index];
 
             // create a state
             stateset.new_state();
@@ -531,7 +534,7 @@ stateset: $1
     fn test_image_new_match() {
         let mut image = Image::new();
         let stateset_index = image.new_stateset();
-        let stateset = image.get_stateset_ref_mut(stateset_index);
+        let stateset = &mut image.statesets[stateset_index];
 
         stateset.new_state();
         stateset.new_state();
@@ -580,7 +583,7 @@ stateset: $1
     fn test_stateset_append_transition() {
         let mut image = Image::new();
         let stateset_index = image.new_stateset();
-        let stateset = image.get_stateset_ref_mut(stateset_index);
+        let stateset = &mut image.statesets[stateset_index];
 
         let state_idx0 = stateset.new_state();
         let state_idx1 = stateset.new_state();
@@ -678,7 +681,7 @@ stateset: $1
         fn test_stateset_transition_insert() {
             let mut image = Image::new();
             let stateset_index = image.new_stateset();
-            let stateset = image.get_stateset_ref_mut(stateset_index);
+            let stateset = &mut image.statesets[stateset_index];
 
             let state_idx0 = stateset.new_state();
             let state_idx1 = stateset.new_state();
