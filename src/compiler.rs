@@ -807,7 +807,7 @@ impl<'a> Compiler<'a> {
                 out_state_index,
                 Transition::CounterCheck(CounterCheckTransition::new(
                     counter_index,
-                    repetition_type,
+                    repetition_type.clone(),
                 )),
             );
 
@@ -828,7 +828,7 @@ impl<'a> Compiler<'a> {
                 left_state_index,
                 Transition::RepetitionAnchor(RepetitionAnchorTransition::new(
                     counter_index,
-                    repetition_type,
+                    repetition_type.clone(),
                 )),
             );
 

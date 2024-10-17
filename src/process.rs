@@ -6,9 +6,10 @@
 
 use crate::{
     compiler::compile_from_str,
-    instance::{CapturePosition, Instance, Thread},
     error::Error,
     image::{Image, MAIN_STATESET_INDEX},
+    instance::{CapturePosition, Instance, Thread},
+    transition::{CheckResult, Transition},
 };
 
 pub struct Process {
@@ -22,9 +23,7 @@ impl Process {
     }
 
     pub fn new_instance<'a, 'b: 'a>(&'a self, chars: &'b [char]) -> Instance {
-        let number_of_captures = self.image.get_number_of_captures();
-        let number_of_counters = self.image.get_number_of_counters();
-        Instance::new(&self.image, chars, number_of_captures, number_of_counters)
+        Instance::new(&self.image, chars) // , number_of_captures, number_of_counters)
     }
 }
 
@@ -105,14 +104,20 @@ fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
 }
 
 fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> bool {
-    // reset the capture positions and repetition counters
-    instance.threads = vec![Thread::new(start, end, MAIN_STATESET_INDEX)];
-    instance.capture_positions = vec![CapturePosition::default(); instance.number_of_captures];
-    instance.counters = vec![0; instance.number_of_counters];
-    instance.anchors = vec![vec![]; instance.number_of_counters];
+    // DEBUG
+    println!("{}", instance.image.get_image_text());
+
+    // allocate the vector of 'capture positions' and 'repetition counters'
+    let number_of_captures = instance.image.get_number_of_captures();
+    let number_of_counters = instance.image.get_number_of_counters();
+    let main_thread = Thread::new(start, end, MAIN_STATESET_INDEX);
+    instance.threads = vec![main_thread];
+    instance.capture_positions = vec![CapturePosition::default(); number_of_captures];
+    instance.counters = vec![0; number_of_counters];
+    instance.anchors = vec![vec![]; number_of_counters];
 
     while start < end {
-        if start_thread(instance, start, end) {
+        if start_thread(instance, start) {
             return true;
         }
 
@@ -120,14 +125,64 @@ fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> b
             break;
         }
 
+        // move forward and try again
         start += 1;
     }
 
     false
 }
 
-fn start_thread(instance: &mut Instance, start: usize, end: usize) -> bool {
-    // todo!()
+fn start_thread(instance: &mut Instance, position: usize) -> bool {
+
+    let (stateset_index, entry_state_index, exit_state_index) = {
+        let thread = instance.get_current_thread_ref();
+        let stateset_index = thread.stateset_index;
+        let stateset = &instance.image.statesets[stateset_index];
+        (
+            stateset_index,
+            stateset.start_node_index,
+            stateset.end_node_index,
+        )
+    };
+
+    println!("THREAD START----------------- position: {}", position);
+
+    // add transitions of the entry state
+    instance.append_tasks_by_state(entry_state_index, position);
+
+    while !instance.get_current_thread_ref_mut().stack.is_empty() {
+        // take the last task
+        let task = instance.get_current_thread_ref_mut().stack.pop().unwrap();
+
+        // get the transition
+        let stateset = &instance.image.statesets[stateset_index];
+        let state = &stateset.states[task.state_index];
+        let transition_node = &state.transitions[task.transition_index];
+
+        println!("> state: {}, position: {}", task.state_index, task.position);
+
+        let position = task.position;
+        let transition = &transition_node.transition;
+        let target_state_index = transition_node.target_state_index;
+
+        let check_result = transition.check(instance, position);
+        match  check_result {
+            CheckResult::Success(forward) => {
+                println!("  trans: {}, forward: {}, --> state: {}", transition, forward, target_state_index);
+
+                if target_state_index == exit_state_index {
+                    println!("FINISH! < {}", exit_state_index);
+                    return true;
+                }
+
+                instance.append_tasks_by_state(target_state_index, position + forward);
+            },
+            CheckResult::Failure => {
+                println!("  trans: {}, X", transition);
+            },
+        }
+    }
+
     false
 }
 

@@ -8,10 +8,9 @@ use crate::image::Image;
 
 pub struct Instance<'a, 'b> {
     pub image: &'a Image,
-    pub chars: &'b [char],         // the source text
-    pub number_of_captures: usize, // for reseting 'capture_positions'
-    pub number_of_counters: usize, // for reseting 'counters' and 'anchors'
-
+    pub chars: &'b [char], // the source text
+    // pub number_of_captures: usize, // for reseting 'capture_positions'
+    // pub number_of_counters: usize, // for reseting 'counters' and 'anchors'
     pub threads: Vec<Thread>,
     pub capture_positions: Vec<CapturePosition>, // the results of matches
     pub counters: Vec<usize>,                    // repetitions counters
@@ -73,32 +72,42 @@ pub struct Instance<'a, 'b> {
 //                    ^__ position (move to right only)
 
 pub struct Thread {
-    pub start: usize,          // poisition included
-    pub end: usize,            // position excluded
+    pub start_position: usize, // poisition included
+    pub end_position: usize,   // position excluded
     pub stateset_index: usize, //
     // pub cursor_stack: Vec<Cursor>, // the `Cursor` stack.
     pub stack: Vec<Task>,
 }
 
 impl Thread {
-    pub fn new(start: usize, end: usize, stateset_index: usize) -> Thread {
+    pub fn new(start_position: usize, end_position: usize, stateset_index: usize) -> Thread {
         Thread {
-            start,
-            end,
+            start_position,
+            end_position,
             stateset_index,
             stack: vec![], // cursor_stack: vec![Cursor::new(start, end)],
         }
     }
 
-    pub fn get_position(&self) -> usize {
-        self.stack.last().unwrap().position
-    }
+    // pub fn get_position(&self) -> usize {
+    //     self.stack.last().unwrap().position
+    // }
 }
 
-struct Task {
-    position: usize,
-    state_index: usize,
-    transition_index: usize,
+pub struct Task {
+    pub position: usize,
+    pub state_index: usize,
+    pub transition_index: usize,
+}
+
+impl Task {
+    pub fn new(position: usize, state_index: usize, transition_index: usize) -> Self {
+        Task {
+            position,
+            state_index,
+            transition_index,
+        }
+    }
 }
 
 /*
@@ -141,14 +150,14 @@ impl<'a, 'b> Instance<'a, 'b> {
     pub fn new(
         image: &'a Image,
         chars: &'b [char],
-        number_of_captures: usize,
-        number_of_counters: usize,
+        // number_of_captures: usize,
+        // number_of_counters: usize,
     ) -> Self {
         Instance {
             image,
             chars,
-            number_of_captures,
-            number_of_counters,
+            // number_of_captures,
+            // number_of_counters,
             threads: vec![],
             capture_positions: vec![],
             counters: vec![],
@@ -163,77 +172,32 @@ impl<'a, 'b> Instance<'a, 'b> {
     //     self.anchors = vec![vec![]; self.number_of_counters];
     // }
 
+    pub fn append_tasks_by_state(&mut self, state_index: usize, position: usize) {
+        let transition_count = {
+            let thread = self.get_current_thread_ref();
+            let stateset_index = thread.stateset_index;
+            let state = &self.image.statesets[stateset_index].states[state_index];
+            state.transitions.len()
+        };
+
+        // add the index of transitions in reverse order,
+        // since stack pops the last element first.
+        let thread = self.get_current_thread_ref_mut();
+        for transition_index in (0..transition_count).rev() {
+            thread
+                .stack
+                .push(Task::new(position, state_index, transition_index));
+        }
+    }
+
     #[inline]
-    pub fn get_current_thread(&self) -> &Thread {
+    pub fn get_current_thread_ref(&self) -> &Thread {
         self.threads.last().unwrap()
     }
 
-    // #[inline]
-    // pub fn get_current_cursor(&self) -> &Cursor {
-    //     self.get_current_thread().cursor_stack.last().unwrap()
-    // }
-
     #[inline]
-    pub fn get_current_position(&self) -> usize {
-        self.get_current_thread().get_position()
+    pub fn get_current_thread_ref_mut(&mut self) -> &mut Thread {
+        let count = self.threads.len();
+        &mut self.threads[count - 1]
     }
-
-    #[inline]
-    pub fn get_current_char(&self) -> char {
-        self.get_char(self.get_current_position())
-    }
-
-    #[inline]
-    pub fn is_first_char(&self) -> bool {
-        let thread = self.get_current_thread();
-        thread.get_position() == 0
-    }
-
-    #[inline]
-    pub fn is_last_char(&self) -> bool {
-        let thread = self.get_current_thread();
-        thread.get_position() == self.chars.len() - 1
-    }
-
-    #[inline]
-    pub fn is_word_bound(&self) -> bool {
-        let current_char = self.get_current_char();
-
-        if is_word_char(current_char) {
-            !is_word_char(self.get_previous_char()) || !is_word_char(self.get_next_char())
-        } else {
-            is_word_char(self.get_previous_char()) || is_word_char(self.get_next_char())
-        }
-    }
-
-    #[inline]
-    pub fn get_char(&self, position: usize) -> char {
-        self.chars[position]
-    }
-
-    #[inline]
-    fn get_previous_char(&self) -> char {
-        if self.is_first_char() {
-            '\0'
-        } else {
-            self.get_char(self.get_current_position() - 1)
-        }
-    }
-
-    #[inline]
-    fn get_next_char(&self) -> char {
-        if self.is_last_char() {
-            '\0'
-        } else {
-            self.get_char(self.get_current_position() + 1)
-        }
-    }
-}
-
-#[inline]
-fn is_word_char(c: char) -> bool {
-    ('a'..='z').any(|e| e == c)
-        || ('A'..='Z').any(|e| e == c)
-        || ('0'..='9').any(|e| e == c)
-        || c == '_'
 }

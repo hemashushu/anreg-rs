@@ -44,7 +44,7 @@ pub struct Image {
 }
 
 pub struct StateSet {
-    states: Vec<StateNode>,
+    pub states: Vec<StateNode>,
     pub start_node_index: usize,
     pub end_node_index: usize,
 
@@ -62,10 +62,10 @@ pub struct StateSet {
 }
 
 // Every state node has one or more transitions.
-struct StateNode {
+pub struct StateNode {
     // link_head_index: Option<usize>,
     // link_tail_index: Option<usize>,
-    transitions: Vec<TransitionNode>,
+    pub transitions: Vec<TransitionNode>,
 }
 
 // struct LinkNode {
@@ -74,9 +74,9 @@ struct StateNode {
 //     transition_index: usize,       // the index of transition node
 // }
 
-struct TransitionNode {
-    transition: Transition,    // the type of transition
-    target_state_index: usize, // the index of next state
+pub struct TransitionNode {
+    pub transition: Transition,    // the type of transition
+    pub target_state_index: usize, // the index of next state
 }
 
 struct Capture {

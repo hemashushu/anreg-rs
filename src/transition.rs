@@ -11,15 +11,6 @@ use crate::{
     instance::{CapturePosition, Instance},
 };
 
-trait TransitionTrait {
-    fn check(&self, context: &mut Instance) -> CheckResult;
-}
-
-pub enum CheckResult {
-    Success(/* position forward */ usize),
-    Failure,
-}
-
 pub enum Transition {
     Jump(JumpTransition),
     Char(CharTransition),
@@ -47,160 +38,18 @@ pub enum Transition {
     LookBehindAssertion(LookBehindAssertionTransition),
 }
 
-impl Display for Transition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Transition::Jump(j) => write!(f, "{}", j),
-            Transition::Char(c) => write!(f, "{}", c),
-            Transition::String(s) => write!(f, "{}", s),
-            Transition::CharSet(c) => write!(f, "{}", c),
-            Transition::SpecialChar(s) => write!(f, "{}", s),
-            Transition::BackReference(b) => write!(f, "{}", b),
-            Transition::Assertion(a) => write!(f, "{}", a),
-            Transition::CaptureStart(m) => write!(f, "{}", m),
-            Transition::CaptureEnd(m) => write!(f, "{}", m),
-            Transition::CounterReset(c) => write!(f, "{}", c),
-            Transition::CounterInc(c) => write!(f, "{}", c),
-            Transition::CounterCheck(c) => write!(f, "{}", c),
-            Transition::Repetition(r) => write!(f, "{}", r),
-            Transition::RepetitionAnchor(r) => write!(f, "{}", r),
-            Transition::Backtrack(b) => write!(f, "{}", b),
-            Transition::LookAheadAssertion(l) => write!(f, "{}", l),
-            Transition::LookBehindAssertion(l) => write!(f, "{}", l),
-        }
-    }
-}
-
 // Jump/Epsilon
 pub struct JumpTransition;
-
-impl TransitionTrait for JumpTransition {
-    fn check(&self, _context: &mut Instance) -> CheckResult {
-        // always success
-        CheckResult::Success(0)
-    }
-}
-
-impl Display for JumpTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Jump")
-    }
-}
 
 pub struct CharTransition {
     pub character: char,
 }
 
-impl CharTransition {
-    pub fn new(character: char) -> Self {
-        CharTransition { character }
-    }
-}
-
-impl TransitionTrait for CharTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let thread = context.get_current_thread();
-        let position = thread.get_position();
-
-        if position >= thread.end {
-            CheckResult::Failure
-        } else {
-            let current_char = context.get_char(position);
-            if self.character == current_char {
-                CheckResult::Success(1)
-            } else {
-                CheckResult::Failure
-            }
-        }
-    }
-}
-
-impl Display for CharTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Char '{}'", self.character)
-    }
-}
-
 pub struct SpecialCharTransition;
-
-impl TransitionTrait for SpecialCharTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        // 'special char' currently contains only the 'char_any'.
-        //
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
-        // \n, \r, \u2028 or \u2029
-
-        let thread = context.get_current_thread();
-        let position = thread.get_position();
-
-        if position >= thread.end {
-            CheckResult::Failure
-        } else {
-            let current_char = context.get_char(position);
-            if current_char != '\n' && current_char != '\r' {
-                CheckResult::Success(1)
-            } else {
-                CheckResult::Failure
-            }
-        }
-    }
-}
-
-impl Display for SpecialCharTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Any char")
-    }
-}
 
 pub struct StringTransition {
     chars: Vec<char>,
     length: usize,
-}
-
-impl StringTransition {
-    pub fn new(s: &str) -> Self {
-        let chars: Vec<char> = s.chars().collect();
-        let length = chars.len();
-        StringTransition { chars, length }
-    }
-}
-
-impl TransitionTrait for StringTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let thread = context.get_current_thread();
-        let position = thread.get_position();
-
-        if position + self.length >= thread.end {
-            CheckResult::Failure
-        } else {
-            let mut is_same = true;
-            for idx in 0..self.length {
-                if self.chars[idx] != context.get_char(idx + position) {
-                    is_same = false;
-                    break;
-                }
-            }
-
-            if is_same {
-                CheckResult::Success(self.length)
-            } else {
-                CheckResult::Failure
-            }
-        }
-    }
-}
-
-impl Display for StringTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        /*
-         * convert Vec<char> into String:
-         * `let s:String = chars.iter().collect()`
-         * or
-         * `let s = String::from_iter(&chars)`
-         */
-        let s = String::from_iter(&self.chars);
-        write!(f, "String \"{}\"", s)
-    }
 }
 
 pub struct CharSetTransition {
@@ -211,6 +60,75 @@ pub struct CharSetTransition {
 pub struct CharRange {
     start: char,
     end_included: char,
+}
+
+pub struct BackReferenceTransition {
+    capture_index: usize,
+}
+
+pub struct AssertionTransition {
+    name: AssertionName,
+}
+
+pub struct CaptureStartTransition {
+    capture_index: usize,
+}
+
+pub struct CaptureEndTransition {
+    capture_index: usize,
+}
+
+pub struct CounterResetTransition {
+    counter_index: usize,
+}
+
+pub struct CounterIncTransition {
+    counter_index: usize,
+}
+
+pub struct CounterCheckTransition {
+    counter_index: usize,
+    repetition_type: RepetitionType,
+}
+
+pub struct RepetitionTransition {
+    counter_index: usize,
+    repetition_type: RepetitionType,
+}
+
+pub struct RepetitionAnchorTransition {
+    counter_index: usize,
+    repetition_type: RepetitionType,
+}
+
+pub struct BacktrackingTransition {
+    counter_index: usize,
+    anchor_state_index: usize,
+}
+
+pub struct LookAheadAssertionTransition {
+    stateset_index: usize,
+    negative: bool,
+}
+
+pub struct LookBehindAssertionTransition {
+    stateset_index: usize,
+    negative: bool,
+    pattern_chars_length: usize,
+}
+
+impl CharTransition {
+    pub fn new(character: char) -> Self {
+        CharTransition { character }
+    }
+}
+
+impl StringTransition {
+    pub fn new(s: &str) -> Self {
+        let chars: Vec<char> = s.chars().collect();
+        let length = chars.len();
+        StringTransition { chars, length }
+    }
 }
 
 impl CharRange {
@@ -301,34 +219,155 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
     add_range(items, '0', '9');
 }
 
-impl TransitionTrait for CharSetTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let thread = context.get_current_thread();
-        let position = thread.get_position();
+impl BackReferenceTransition {
+    pub fn new(capture_index: usize) -> Self {
+        BackReferenceTransition { capture_index }
+    }
+}
 
-        if position >= thread.end {
-            return CheckResult::Failure;
+impl AssertionTransition {
+    pub fn new(name: AssertionName) -> Self {
+        AssertionTransition { name }
+    }
+}
+
+impl CaptureStartTransition {
+    pub fn new(capture_index: usize) -> Self {
+        CaptureStartTransition { capture_index }
+    }
+}
+
+impl CaptureEndTransition {
+    pub fn new(capture_index: usize) -> Self {
+        CaptureEndTransition { capture_index }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum RepetitionType {
+    Specified(usize),
+    Range(usize, usize),
+}
+
+impl CounterResetTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterResetTransition { counter_index }
+    }
+}
+
+impl CounterIncTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterIncTransition { counter_index }
+    }
+}
+
+impl CounterCheckTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        CounterCheckTransition {
+            counter_index,
+            repetition_type,
         }
+    }
+}
 
-        let current_char = context.get_char(position);
-        let mut found: bool = false;
-
-        for item in &self.items {
-            found = match item {
-                CharSetItem::Char(c) => current_char == *c,
-                CharSetItem::Range(r) => current_char >= r.start && current_char <= r.end_included,
-            };
-
-            if found {
-                break;
-            }
+impl RepetitionTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        RepetitionTransition {
+            counter_index,
+            repetition_type,
         }
+    }
+}
 
-        if found ^ self.negative {
-            CheckResult::Success(1)
-        } else {
-            CheckResult::Failure
+impl RepetitionAnchorTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        RepetitionAnchorTransition {
+            counter_index,
+            repetition_type,
         }
+    }
+}
+
+impl BacktrackingTransition {
+    pub fn new(counter_index: usize, anchor_state_index: usize) -> Self {
+        BacktrackingTransition {
+            counter_index,
+            anchor_state_index,
+        }
+    }
+}
+
+impl LookAheadAssertionTransition {
+    pub fn new(stateset_index: usize, negative: bool) -> Self {
+        LookAheadAssertionTransition {
+            stateset_index,
+            negative,
+        }
+    }
+}
+
+impl LookBehindAssertionTransition {
+    pub fn new(stateset_index: usize, negative: bool, pattern_chars_length: usize) -> Self {
+        LookBehindAssertionTransition {
+            stateset_index,
+            negative,
+            pattern_chars_length,
+        }
+    }
+}
+
+impl Display for Transition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transition::Jump(j) => write!(f, "{}", j),
+            Transition::Char(c) => write!(f, "{}", c),
+            Transition::String(s) => write!(f, "{}", s),
+            Transition::CharSet(c) => write!(f, "{}", c),
+            Transition::SpecialChar(s) => write!(f, "{}", s),
+            Transition::BackReference(b) => write!(f, "{}", b),
+            Transition::Assertion(a) => write!(f, "{}", a),
+            Transition::CaptureStart(m) => write!(f, "{}", m),
+            Transition::CaptureEnd(m) => write!(f, "{}", m),
+            Transition::CounterReset(c) => write!(f, "{}", c),
+            Transition::CounterInc(c) => write!(f, "{}", c),
+            Transition::CounterCheck(c) => write!(f, "{}", c),
+            Transition::Repetition(r) => write!(f, "{}", r),
+            Transition::RepetitionAnchor(r) => write!(f, "{}", r),
+            Transition::Backtrack(b) => write!(f, "{}", b),
+            Transition::LookAheadAssertion(l) => write!(f, "{}", l),
+            Transition::LookBehindAssertion(l) => write!(f, "{}", l),
+        }
+    }
+}
+
+impl Display for JumpTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Jump")
+    }
+}
+
+impl Display for CharTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Char '{}'", self.character)
+    }
+}
+
+impl Display for SpecialCharTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Any char")
+    }
+}
+
+impl Display for StringTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /*
+         * convert Vec<char> into String:
+         * `let s:String = chars.iter().collect()`
+         * or
+         * `let s = String::from_iter(&chars)`
+         */
+        let s = String::from_iter(&self.chars);
+        write!(f, "String \"{}\"", s)
     }
 }
 
@@ -357,121 +396,15 @@ impl Display for CharSetTransition {
     }
 }
 
-pub struct AssertionTransition {
-    name: AssertionName,
-}
-
-impl AssertionTransition {
-    pub fn new(name: AssertionName) -> Self {
-        AssertionTransition { name }
-    }
-}
-
-impl TransitionTrait for AssertionTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let success = match self.name {
-            AssertionName::Start => context.is_first_char(),
-            AssertionName::End => context.is_last_char(),
-            AssertionName::IsBound => context.is_word_bound(),
-            AssertionName::IsNotBound => !context.is_word_bound(),
-        };
-
-        if success {
-            CheckResult::Success(0)
-        } else {
-            CheckResult::Failure
-        }
-    }
-}
-
-impl Display for AssertionTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Assertion \"{}\"", self.name)
-    }
-}
-
-pub struct BackReferenceTransition {
-    capture_index: usize,
-}
-
-impl BackReferenceTransition {
-    pub fn new(capture_index: usize) -> Self {
-        BackReferenceTransition { capture_index }
-    }
-}
-
-impl TransitionTrait for BackReferenceTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let CapturePosition {
-            start,
-            end_included,
-        } = &context.capture_positions[self.capture_index];
-
-        let chars = &context.chars[*start..=*end_included];
-        let length = end_included - start + 1;
-
-        let thread = context.get_current_thread();
-        let position = thread.get_position();
-
-        if position + length >= thread.end {
-            CheckResult::Failure
-        } else {
-            let mut is_same = true;
-            for idx in 0..length {
-                if chars[idx] != context.get_char(idx + position) {
-                    is_same = false;
-                    break;
-                }
-            }
-
-            if is_same {
-                CheckResult::Success(length)
-            } else {
-                CheckResult::Failure
-            }
-        }
-    }
-}
-
 impl Display for BackReferenceTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Back reference {{{}}}", self.capture_index)
     }
 }
 
-pub struct CaptureStartTransition {
-    capture_index: usize,
-}
-
-pub struct CaptureEndTransition {
-    capture_index: usize,
-}
-
-impl CaptureStartTransition {
-    pub fn new(capture_index: usize) -> Self {
-        CaptureStartTransition { capture_index }
-    }
-}
-
-impl CaptureEndTransition {
-    pub fn new(capture_index: usize) -> Self {
-        CaptureEndTransition { capture_index }
-    }
-}
-
-impl TransitionTrait for CaptureStartTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let position = context.get_current_position();
-        context.capture_positions[self.capture_index].start = position;
-        CheckResult::Success(0)
-    }
-}
-
-impl TransitionTrait for CaptureEndTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        let position = context.get_current_position();
-        context.capture_positions[self.capture_index].end_included = position;
-        CheckResult::Success(0)
+impl Display for AssertionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Assertion \"{}\"", self.name)
     }
 }
 
@@ -484,79 +417,6 @@ impl Display for CaptureStartTransition {
 impl Display for CaptureEndTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Capture end {{{}}}", self.capture_index)
-    }
-}
-
-pub struct CounterResetTransition {
-    counter_index: usize,
-}
-
-pub struct CounterIncTransition {
-    counter_index: usize,
-}
-
-pub struct CounterCheckTransition {
-    counter_index: usize,
-    repetition_type: RepetitionType,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum RepetitionType {
-    Specified(usize),
-    Range(usize, usize),
-}
-
-impl CounterResetTransition {
-    pub fn new(counter_index: usize) -> Self {
-        CounterResetTransition { counter_index }
-    }
-}
-
-impl CounterIncTransition {
-    pub fn new(counter_index: usize) -> Self {
-        CounterIncTransition { counter_index }
-    }
-}
-
-impl CounterCheckTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
-        CounterCheckTransition {
-            counter_index,
-            repetition_type,
-        }
-    }
-}
-
-impl TransitionTrait for CounterResetTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        // reset counter
-        context.counters[self.counter_index] = 0;
-
-        // reset anchors also
-        context.anchors[self.counter_index] = vec![];
-
-        CheckResult::Success(0)
-    }
-}
-
-impl TransitionTrait for CounterIncTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        context.counters[self.counter_index] += 1;
-        CheckResult::Success(0)
-    }
-}
-
-impl TransitionTrait for CounterCheckTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        /**
-         *
-         *
-         *
-         *
-         *
-         *
-         */
-        todo!()
     }
 }
 
@@ -597,50 +457,6 @@ impl Display for RepetitionType {
     }
 }
 
-pub struct RepetitionTransition {
-    counter_index: usize,
-    repetition_type: RepetitionType,
-}
-
-pub struct RepetitionAnchorTransition {
-    counter_index: usize,
-
-    // // to indicate when to start recording,
-    // // the value of 'threshold' is the times (included) of repetition.
-    // threshold: usize,
-    repetition_type: RepetitionType,
-}
-
-impl RepetitionTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
-        RepetitionTransition {
-            counter_index,
-            repetition_type,
-        }
-    }
-}
-
-impl RepetitionAnchorTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
-        RepetitionAnchorTransition {
-            counter_index,
-            repetition_type,
-        }
-    }
-}
-
-impl TransitionTrait for RepetitionTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        todo!()
-    }
-}
-
-impl TransitionTrait for RepetitionAnchorTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        todo!()
-    }
-}
-
 impl Display for RepetitionTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -661,29 +477,6 @@ impl Display for RepetitionAnchorTransition {
     }
 }
 
-pub struct BacktrackingTransition {
-    counter_index: usize,
-    anchor_state_index: usize,
-}
-
-impl BacktrackingTransition {
-    pub fn new(counter_index: usize, anchor_state_index: usize) -> Self {
-        BacktrackingTransition {
-            counter_index,
-            anchor_state_index,
-        }
-    }
-}
-
-impl TransitionTrait for BacktrackingTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        // move back the position by anchor,
-        // and build a stackframe for the target state node
-        // todo
-        CheckResult::Failure
-    }
-}
-
 impl Display for BacktrackingTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -692,56 +485,6 @@ impl Display for BacktrackingTransition {
             self.counter_index, self.anchor_state_index
         )
     }
-}
-
-pub struct LookAheadAssertionTransition {
-    stateset_index: usize,
-    negative: bool,
-}
-
-pub struct LookBehindAssertionTransition {
-    stateset_index: usize,
-    negative: bool,
-    pattern_chars_length: usize,
-}
-
-impl LookAheadAssertionTransition {
-    pub fn new(stateset_index: usize, negative: bool) -> Self {
-        LookAheadAssertionTransition {
-            stateset_index,
-            negative,
-        }
-    }
-}
-
-impl LookBehindAssertionTransition {
-    pub fn new(stateset_index: usize, negative: bool, pattern_chars_length: usize) -> Self {
-        LookBehindAssertionTransition {
-            stateset_index,
-            negative,
-            pattern_chars_length,
-        }
-    }
-}
-
-impl TransitionTrait for LookAheadAssertionTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        todo!()
-    }
-
-    // fn length(&self) -> Option<usize> {
-    //     None
-    // }
-}
-
-impl TransitionTrait for LookBehindAssertionTransition {
-    fn check(&self, context: &mut Instance) -> CheckResult {
-        todo!()
-    }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(self.pattern_chars_length)
-    // }
 }
 
 impl Display for LookAheadAssertionTransition {
@@ -770,4 +513,272 @@ impl Display for LookBehindAssertionTransition {
             )
         }
     }
+}
+
+impl Transition {
+    pub fn check(&self, instance: &mut Instance, position: usize) -> CheckResult {
+        match self {
+            Transition::Jump(_) => {
+                // always success
+                CheckResult::Success(0)
+            }
+            Transition::Char(transition) => {
+                let thread = instance.get_current_thread_ref();
+
+                if position >= thread.end_position {
+                    CheckResult::Failure
+                } else {
+                    let current_char = get_char(instance, position);
+                    if transition.character == current_char {
+                        CheckResult::Success(1)
+                    } else {
+                        CheckResult::Failure
+                    }
+                }
+            }
+            Transition::SpecialChar(transition) => {
+                // 'special char' currently contains only the 'char_any'.
+                //
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
+                // \n, \r, \u2028 or \u2029
+
+                let thread = instance.get_current_thread_ref();
+
+                if position >= thread.end_position {
+                    CheckResult::Failure
+                } else {
+                    let current_char = get_char(instance, position);
+                    if current_char != '\n' && current_char != '\r' {
+                        CheckResult::Success(1)
+                    } else {
+                        CheckResult::Failure
+                    }
+                }
+            }
+            Transition::String(transition) => {
+                let thread = instance.get_current_thread_ref();
+
+                if position + transition.length >= thread.end_position {
+                    CheckResult::Failure
+                } else {
+                    let mut is_same = true;
+                    for idx in 0..transition.length {
+                        if transition.chars[idx] != get_char(instance, idx + position) {
+                            is_same = false;
+                            break;
+                        }
+                    }
+
+                    if is_same {
+                        CheckResult::Success(transition.length)
+                    } else {
+                        CheckResult::Failure
+                    }
+                }
+            }
+            Transition::CharSet(transition) => {
+                let thread = instance.get_current_thread_ref();
+
+                if position >= thread.end_position {
+                    return CheckResult::Failure;
+                }
+
+                let current_char = get_char(instance, position);
+                let mut found: bool = false;
+
+                for item in &transition.items {
+                    found = match item {
+                        CharSetItem::Char(c) => current_char == *c,
+                        CharSetItem::Range(r) => {
+                            current_char >= r.start && current_char <= r.end_included
+                        }
+                    };
+
+                    if found {
+                        break;
+                    }
+                }
+
+                if found ^ transition.negative {
+                    CheckResult::Success(1)
+                } else {
+                    CheckResult::Failure
+                }
+            }
+            Transition::BackReference(transition) => {
+                let CapturePosition {
+                    start,
+                    end_included,
+                } = &instance.capture_positions[transition.capture_index];
+
+                let chars = &instance.chars[*start..=*end_included];
+                let length = end_included - start + 1;
+
+                let thread = instance.get_current_thread_ref();
+
+                if position + length >= thread.end_position {
+                    CheckResult::Failure
+                } else {
+                    let mut is_same = true;
+                    for idx in 0..length {
+                        if chars[idx] != get_char(instance, idx + position) {
+                            is_same = false;
+                            break;
+                        }
+                    }
+
+                    if is_same {
+                        CheckResult::Success(length)
+                    } else {
+                        CheckResult::Failure
+                    }
+                }
+            }
+            Transition::Assertion(transition) => {
+                let success = match transition.name {
+                    AssertionName::Start => is_first_char(instance, position),
+                    AssertionName::End => is_last_char(instance, position),
+                    AssertionName::IsBound => is_word_bound(instance, position),
+                    AssertionName::IsNotBound => !is_word_bound(instance, position),
+                };
+
+                if success {
+                    CheckResult::Success(0)
+                } else {
+                    CheckResult::Failure
+                }
+            }
+            Transition::CaptureStart(transition) => {
+                instance.capture_positions[transition.capture_index].start = position;
+                CheckResult::Success(0)
+            }
+            Transition::CaptureEnd(transition) => {
+                instance.capture_positions[transition.capture_index].end_included = position;
+                CheckResult::Success(0)
+            }
+            Transition::CounterReset(transition) => {
+                // reset counter
+                instance.counters[transition.counter_index] = 0;
+
+                // reset anchors also
+                instance.anchors[transition.counter_index] = vec![];
+
+                CheckResult::Success(0)
+            }
+            Transition::CounterInc(transition) => {
+                instance.counters[transition.counter_index] += 1;
+                CheckResult::Success(0)
+            }
+            Transition::CounterCheck(transition) => {
+                let count = instance.counters[transition.counter_index];
+                let success = match transition.repetition_type {
+                    RepetitionType::Specified(m) => count == m,
+                    RepetitionType::Range(from, to) => count >= from && count <= to,
+                };
+                if success {
+                    CheckResult::Success(0)
+                } else {
+                    CheckResult::Failure
+                }
+            }
+            Transition::Repetition(transition) => {
+                let count = instance.counters[transition.counter_index];
+                let success = match transition.repetition_type {
+                    RepetitionType::Specified(max) => count < max,
+                    RepetitionType::Range(_, max) => count < max,
+                };
+                if success {
+                    CheckResult::Success(0)
+                } else {
+                    CheckResult::Failure
+                }
+            }
+            Transition::RepetitionAnchor(transition) => {
+                let count = instance.counters[transition.counter_index];
+                let success = match transition.repetition_type {
+                    RepetitionType::Specified(max) => count < max,
+                    RepetitionType::Range(_, max) => count < max,
+                };
+
+                if success {
+                    // add anchor
+                    instance.anchors[transition.counter_index].push(position);
+
+                    // return
+                    CheckResult::Success(0)
+                } else {
+                    CheckResult::Failure
+                }
+            }
+            Transition::Backtrack(transition) => {
+                // move back the position by anchor
+                let previous_position_opt = instance.anchors[transition.counter_index].pop();
+
+                if let Some(previous_position) = previous_position_opt {
+                    // build a stackframe for the target state node
+                    todo!()
+                }
+
+                CheckResult::Failure
+            }
+            Transition::LookAheadAssertion(transition) => todo!(),
+            Transition::LookBehindAssertion(transition) => todo!(),
+        }
+    }
+}
+
+#[inline]
+fn get_char(instance: &Instance, position: usize) -> char {
+    instance.chars[position]
+}
+
+#[inline]
+fn is_first_char(_instance: &Instance, position: usize) -> bool {
+    position == 0
+}
+
+#[inline]
+fn is_last_char(instance: &Instance, position: usize) -> bool {
+    position == instance.chars.len() - 1
+}
+
+fn get_previous_char(instance: &Instance, position: usize) -> char {
+    if is_first_char(instance, position) {
+        '\0'
+    } else {
+        get_char(instance, position - 1)
+    }
+}
+
+fn get_next_char(instance: &Instance, position: usize) -> char {
+    if is_last_char(instance, position) {
+        '\0'
+    } else {
+        get_char(instance, position + 1)
+    }
+}
+
+fn is_word_bound(instance: &Instance, position: usize) -> bool {
+    let current_char = get_char(instance, position);
+
+    if is_word_char(current_char) {
+        !is_word_char(get_previous_char(instance, position))
+            || !is_word_char(get_next_char(instance, position))
+    } else {
+        is_word_char(get_previous_char(instance, position))
+            || is_word_char(get_next_char(instance, position))
+    }
+}
+
+#[inline]
+fn is_word_char(c: char) -> bool {
+    ('a'..='z').any(|e| e == c)
+        || ('A'..='Z').any(|e| e == c)
+        || ('0'..='9').any(|e| e == c)
+        || c == '_'
+}
+
+pub enum CheckResult {
+    Success(/* position forward */ usize),
+    Failure,
 }
