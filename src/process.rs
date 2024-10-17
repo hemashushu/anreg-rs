@@ -127,7 +127,8 @@ fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> b
 }
 
 fn start_thread(instance: &mut Instance, start: usize, end: usize) -> bool {
-    todo!()
+    // todo!()
+    false
 }
 
 #[cfg(test)]

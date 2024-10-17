@@ -125,6 +125,7 @@ impl Display for PresetCharSetName {
     }
 }
 
+// 'special char' currently contains only the 'char_any'.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SpecialCharName {
     CharAny,

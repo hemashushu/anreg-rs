@@ -10,7 +10,7 @@ pub struct Instance<'a, 'b> {
     pub image: &'a Image,
     pub chars: &'b [char],         // the source text
     pub number_of_captures: usize, // for reseting 'capture_positions'
-    pub number_of_counters: usize, // for reseting 'counters'
+    pub number_of_counters: usize, // for reseting 'counters' and 'anchors'
 
     pub threads: Vec<Thread>,
     pub capture_positions: Vec<CapturePosition>, // the results of matches
@@ -77,7 +77,7 @@ pub struct Thread {
     pub end: usize,            // position excluded
     pub stateset_index: usize, //
     // pub cursor_stack: Vec<Cursor>, // the `Cursor` stack.
-    pub stack: Vec<StackFrame>,
+    pub stack: Vec<Task>,
 }
 
 impl Thread {
@@ -89,12 +89,16 @@ impl Thread {
             stack: vec![], // cursor_stack: vec![Cursor::new(start, end)],
         }
     }
+
+    pub fn get_position(&self) -> usize {
+        self.stack.last().unwrap().position
+    }
 }
 
-struct StackFrame {
+struct Task {
     position: usize,
     state_index: usize,
-    transition_indexes: Vec<usize>,
+    transition_index: usize,
 }
 
 /*
@@ -171,7 +175,7 @@ impl<'a, 'b> Instance<'a, 'b> {
 
     #[inline]
     pub fn get_current_position(&self) -> usize {
-        self.get_current_thread().stack.last().unwrap().position
+        self.get_current_thread().get_position()
     }
 
     #[inline]
@@ -181,24 +185,24 @@ impl<'a, 'b> Instance<'a, 'b> {
 
     #[inline]
     pub fn is_first_char(&self) -> bool {
-        self.get_current_position() == self.get_current_thread().start
+        let thread = self.get_current_thread();
+        thread.get_position() == 0
     }
 
     #[inline]
     pub fn is_last_char(&self) -> bool {
-        self.get_current_position() == self.get_current_thread().end - 1
+        let thread = self.get_current_thread();
+        thread.get_position() == self.chars.len() - 1
     }
 
     #[inline]
     pub fn is_word_bound(&self) -> bool {
         let current_char = self.get_current_char();
 
-        if Instance::is_word_char(current_char) {
-            !Instance::is_word_char(self.get_previous_char())
-                || !Instance::is_word_char(self.get_next_char())
+        if is_word_char(current_char) {
+            !is_word_char(self.get_previous_char()) || !is_word_char(self.get_next_char())
         } else {
-            Instance::is_word_char(self.get_previous_char())
-                || Instance::is_word_char(self.get_next_char())
+            is_word_char(self.get_previous_char()) || is_word_char(self.get_next_char())
         }
     }
 
@@ -224,12 +228,12 @@ impl<'a, 'b> Instance<'a, 'b> {
             self.get_char(self.get_current_position() + 1)
         }
     }
+}
 
-    #[inline]
-    fn is_word_char(c: char) -> bool {
-        ('a'..='z').any(|e| e == c)
-            || ('A'..='Z').any(|e| e == c)
-            || ('0'..='9').any(|e| e == c)
-            || c == '_'
-    }
+#[inline]
+fn is_word_char(c: char) -> bool {
+    ('a'..='z').any(|e| e == c)
+        || ('A'..='Z').any(|e| e == c)
+        || ('0'..='9').any(|e| e == c)
+        || c == '_'
 }

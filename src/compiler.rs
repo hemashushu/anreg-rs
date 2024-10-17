@@ -14,11 +14,11 @@ use crate::{
     parser::parse_from_str,
     transition::{
         add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
-        AssertionTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition,
-        CharSetItem, CharSetTransition, CharTransition, CounterCheckTransition,
-        CounterIncTransition, CounterResetTransition, JumpTransition, LookAheadAssertionTransition,
-        LookBehindAssertionTransition, RepetitionAnchorTransition, RepetitionType,
-        SpecialCharTransition, StringTransition, Transition,
+        AssertionTransition, BackReferenceTransition, BacktrackingTransition, CaptureEndTransition,
+        CaptureStartTransition, CharSetItem, CharSetTransition, CharTransition,
+        CounterCheckTransition, CounterIncTransition, CounterResetTransition, JumpTransition,
+        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionAnchorTransition,
+        RepetitionTransition, RepetitionType, SpecialCharTransition, StringTransition, Transition,
     },
 };
 
@@ -93,7 +93,9 @@ impl<'a> Compiler<'a> {
                             .to_owned(),
                     ));
                 }
-            } else if matches!(expression, Expression::Assertion(AssertionName::End)) {
+            }
+
+            if matches!(expression, Expression::Assertion(AssertionName::End)) {
                 if expression_index == expressions.len() - 1 {
                     // skips the 'end' assertion emitting.
                     fixed_end = true;
@@ -103,9 +105,9 @@ impl<'a> Compiler<'a> {
                             .to_owned(),
                     ));
                 }
-            } else {
-                ports.push(self.emit_expression(expression)?);
             }
+
+            ports.push(self.emit_expression(expression)?);
         }
 
         let stateset = self.get_current_stateset();
@@ -135,27 +137,27 @@ impl<'a> Compiler<'a> {
             )
         };
 
-        //     match start     box        match end
+        //   capture start     box       capture end
         //        trans    /-----------\    trans
-        //  --o===========--o in  out o--==========o--
+        //  ==o==---------==o in  out o==--------==o==
         //   in            \-----------/           out
 
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let match_start_transition = CaptureStartTransition::new(match_index);
-        let match_end_transition = CaptureEndTransition::new(match_index);
+        let capture_start_transition = CaptureStartTransition::new(match_index);
+        let capture_end_transition = CaptureEndTransition::new(match_index);
 
         stateset.append_transition(
             in_state_index,
             program_port.in_state_index,
-            Transition::CaptureStart(match_start_transition),
+            Transition::CaptureStart(capture_start_transition),
         );
 
         stateset.append_transition(
             program_port.out_state_index,
             out_state_index,
-            Transition::CaptureEnd(match_end_transition),
+            Transition::CaptureEnd(capture_end_transition),
         );
 
         let match_port = Port::new(in_state_index, out_state_index);
@@ -194,11 +196,11 @@ impl<'a> Compiler<'a> {
          * change operator precedence and associativity
          */
 
-        // connecting two groups of states by adding a 'jump transition'
+        // connecting two or more boxies by 'jump transition'
         //
-        //     prev                      next
-        //  /-----------\    jump    /-----------\
-        // --o in  out o--==========--o in  out o--
+        //     prev         jump        next
+        //  /-----------\   trans    /-----------\
+        // ==o in  out o==----------==o in  out o==
         //  \-----------/            \-----------/
 
         let mut ports = vec![];
@@ -241,12 +243,12 @@ impl<'a> Compiler<'a> {
     fn emit_logic_or(&mut self, left: &Expression, right: &Expression) -> Result<Port, Error> {
         //                    left
         //         jump   /-----------\   jump
-        //      /========--o in  out o--========\
+        //      /--------==o in  out o==--------\
         //  in  |         \-----------/         |  out
-        // --o==|                               |==o--
+        // ==o--|                               |--o==
         //      |             right             |
         //      |         /-----------\         |
-        //      \========--o in  out o--========/
+        //      \--------==o in  out o==--------/
         //         jump   \-----------/   jump
 
         let left_port = self.emit_expression(left)?;
@@ -633,10 +635,10 @@ impl<'a> Compiler<'a> {
         let match_index = self.image.new_match(name_option);
         let port = self.emit_expression(expression)?;
 
-        //     match start      box        match end
-        //   in   trans    /-----------\    trans  out
-        //  --o===========--o in  out o--==========o--
-        //                 \-----------/
+        //   capture start      box      capture end
+        //        trans    /-----------\    trans
+        //  ==o==---------==o in  out o==--------==o==
+        //   in            \-----------/           out
 
         let stateset = self.get_current_stateset();
         let in_state_index = stateset.new_state();
@@ -664,20 +666,20 @@ impl<'a> Compiler<'a> {
         // greedy optional
         //
         //                    box
-        //   in     jmp  /-----------\  jmp out
-        //  --o|o--=====--o in  out o--=====o--
-        //     |o--\     \-----------/      ^
+        //   in     jmp  /-----------\  jmp
+        //  ==o|o==-----==o in  out o==---==o==
+        //     |o==\     \-----------/      ^ out
         //         |                        |
-        //         \========================/
+        //         \------------------------/
         //                  jump trans
 
         // lazy optional
         //                  jump trans
-        //         /========================\
+        //         /------------------------\
         //         |                        |
-        //     |o--/     /-----------\      v
-        //  --o|o--=====--o in  out o--=====o--
-        //   in     jmp  \-----------/  jmp out
+        //     |o==/     /-----------\      v out
+        //  ==o|o==-----==o in  out o==---==o==
+        //   in     jmp  \-----------/  jmp
         //                    box
 
         let port = self.emit_expression(expression)?;
@@ -751,11 +753,11 @@ impl<'a> Compiler<'a> {
         //                                         counter
         //                             box       | inc
         //   in        left  jump  /-----------\ v trans  right     out
-        //  --o----------o--======--o in  out o-----------o|o-------o--
-        //      ^ cnter  ^         \-----------/           |o-\  ^ counter
-        //      | reset  |                                    |  | check
-        //        trans  \====================================/    trans
-        //                            jump trans
+        //  ==o==------==o==------==o in  out o==-------==o|o==---==o==
+        //       ^ cnter ^         \-----------/           |o-\  ^ counter
+        //       | reset |                                    |  | check
+        //         trans \------------------------------------/    trans
+        //                         repetition trans
         //
         // greedy repetion
         //                     repetition anchor trans
@@ -763,11 +765,11 @@ impl<'a> Compiler<'a> {
         //               |                         counter    |
         //               |             box       | inc        |
         //   in          v   jump  /-----------\ v trans      |
-        //  --o----------o--======--o in  out o-----------o|o-/   anchor  out
-        //      ^ cnter  left      \-----------/     right |o-------o--------o|o--
-        //      | reset                                        ^    ^         |o-\
-        //        trans                          counter check |    |            |
-        //                                               trans      \------------/
+        //  ==o==------==o==------==o in  out o==-------==o|o=/   anchor     branch   out
+        //       ^ cnter left      \-----------/     right |o==---==o==----==o|o==--==o==
+        //       | reset                                        ^   ^         |o=\
+        //         trans                          counter check |   |            |
+        //                                                trans     \------------/
         //                                                          backtrack trans
 
         let port = self.emit_expression(expression)?;
@@ -778,7 +780,6 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let left_state_index = stateset.new_state();
         let right_state_index = stateset.new_state();
-        let out_state_index = stateset.new_state();
 
         stateset.append_transition(
             in_state_index,
@@ -798,8 +799,10 @@ impl<'a> Compiler<'a> {
             Transition::CounterInc(CounterIncTransition::new(counter_index)),
         );
 
-        let goto_check_and_exit = |ss: &mut StateSet| {
-            ss.append_transition(
+        if is_lazy {
+            let out_state_index = stateset.new_state();
+
+            stateset.append_transition(
                 right_state_index,
                 out_state_index,
                 Transition::CounterCheck(CounterCheckTransition::new(
@@ -807,40 +810,60 @@ impl<'a> Compiler<'a> {
                     repetition_type,
                 )),
             );
-        };
 
-        let goto_redo = |ss: &mut StateSet| {
-            let threshold_option = if is_lazy {
-                None
-            } else {
-                if let RepetitionType::Range(from, _) = repetition_type {
-                    Some(from)
-                } else {
-                    None
-                }
-            };
+            stateset.append_transition(
+                right_state_index,
+                left_state_index,
+                Transition::Repetition(RepetitionTransition::new(counter_index, repetition_type)),
+            );
 
-            let transition = if let Some(threshold) = threshold_option {
-                Transition::RepetionAnchor(RepetitionAnchorTransition::new(
-                    counter_index,
-                    threshold,
-                ))
-            } else {
-                Transition::Jump(JumpTransition)
-            };
-
-            ss.append_transition(right_state_index, left_state_index, transition);
-        };
-
-        if is_lazy {
-            goto_check_and_exit(stateset);
-            goto_redo(stateset);
+            Ok(Port::new(in_state_index, out_state_index))
         } else {
-            goto_redo(stateset);
-            goto_check_and_exit(stateset);
-        }
+            let anchor_state_index = stateset.new_state();
+            let branch_state_index = stateset.new_state();
+            let out_state_index = stateset.new_state();
 
-        Ok(Port::new(in_state_index, out_state_index))
+            stateset.append_transition(
+                right_state_index,
+                left_state_index,
+                Transition::RepetitionAnchor(RepetitionAnchorTransition::new(
+                    counter_index,
+                    repetition_type,
+                )),
+            );
+
+            stateset.append_transition(
+                right_state_index,
+                anchor_state_index,
+                Transition::CounterCheck(CounterCheckTransition::new(
+                    counter_index,
+                    repetition_type,
+                )),
+            );
+
+            stateset.append_transition(
+                anchor_state_index,
+                branch_state_index,
+                Transition::Jump(JumpTransition),
+            );
+
+            stateset.append_transition(
+                branch_state_index,
+                out_state_index,
+                Transition::Jump(JumpTransition),
+            );
+
+            stateset.append_transition(
+                branch_state_index,
+                anchor_state_index,
+                Transition::Backtrack(BacktrackingTransition::new(
+                    counter_index,
+                    anchor_state_index,
+                )),
+            );
+
+            Ok(Port::new(in_state_index, out_state_index))
+        }
     }
 
     fn emit_lookahead_assertion(
@@ -852,10 +875,10 @@ impl<'a> Compiler<'a> {
         // * is_before(A, B), A.is_before(B), A(?=B)
         // * is_not_before(A, B), A.is_not_before(B), A(?!B)
 
-        //              current      | lookahead
+        //                           | lookahead
         //  in       /-----------\   v trans
-        // --o======--o in  out o-------o--
-        //      jmp  \-----------/      out
+        // ==o==----==o in  out o==---==o==
+        //      jump \-----------/      out
 
         let port = self.emit_expression(current_expression)?;
 
@@ -912,10 +935,10 @@ impl<'a> Compiler<'a> {
         // * is_after(A, B), A.is_after(B), (?<=B)A
         // * is_not_after(A, B, A.is_not_after(B), (?<!B)A
 
-        //     | lookbehind  current
-        //     v trans   /-----------\
-        // --o------------o in  out o--=====--o--
-        //  in           \-----------/  jmp   out
+        //       | lookbehind
+        //       v trans /-----------\        out
+        // ==o==--------==o in  out o==-----==o==
+        //  in           \-----------/  jump
 
         // 1. save the current stateset index
         // 2. create new stateset
@@ -1519,23 +1542,27 @@ define(letter, ['a'..'f', char_space])
     #[test]
     fn test_compile_assertion() {
         {
-            let mut image = compile_from_str(r#"start, is_bound, 'a'"#).unwrap();
+            let image = compile_from_str(r#"start, is_bound, 'a'"#).unwrap();
             let s = image.get_image_text();
 
             assert_str_eq!(
                 s,
                 "\
 - 0
-  -> 1, Assertion \"is_bound\"
+  -> 1, Assertion \"start\"
 - 1
   -> 2, Jump
 - 2
-  -> 3, Char 'a'
+  -> 3, Assertion \"is_bound\"
 - 3
-  -> 5, Capture end {0}
-> 4
+  -> 4, Jump
+- 4
+  -> 5, Char 'a'
+- 5
+  -> 7, Capture end {0}
+> 6
   -> 0, Capture start {0}
-< 5
+< 7
 # {0}"
             );
 
@@ -1545,7 +1572,7 @@ define(letter, ['a'..'f', char_space])
         }
 
         {
-            let mut image = compile_from_str(r#"is_not_bound, 'a', end"#).unwrap();
+            let image = compile_from_str(r#"is_not_bound, 'a', end"#).unwrap();
             let s = image.get_image_text();
 
             assert_str_eq!(
@@ -1558,10 +1585,14 @@ define(letter, ['a'..'f', char_space])
 - 2
   -> 3, Char 'a'
 - 3
-  -> 5, Capture end {0}
-> 4
+  -> 4, Jump
+- 4
+  -> 5, Assertion \"end\"
+- 5
+  -> 7, Capture end {0}
+> 6
   -> 0, Capture start {0}
-< 5
+< 7
 # {0}"
             );
 
@@ -1919,13 +1950,18 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 1
+  -> 3, Repetition anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
-  -> 7, Capture end {0}
-> 6
+  -> 6, Jump
+- 6
+  -> 7, Jump
+  -> 5, Backtrack %0 -> 5
+- 7
+  -> 9, Capture end {0}
+> 8
   -> 2, Capture start {0}
-< 7
+< 9
 # {0}"
             );
         }
@@ -1948,7 +1984,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, from 1, to MAX
-  -> 3, Jump
+  -> 3, Repetition %0, from 1, to MAX
 - 5
   -> 7, Capture end {0}
 > 6
@@ -1975,18 +2011,23 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 1
+  -> 3, Repetition anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
-  -> 7, Jump
+  -> 6, Jump
 - 6
-  -> 2, Jump
   -> 7, Jump
+  -> 5, Backtrack %0 -> 5
 - 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
+  -> 9, Jump
+- 8
+  -> 2, Jump
+  -> 9, Jump
+- 9
+  -> 11, Capture end {0}
+> 10
+  -> 8, Capture start {0}
+< 11
 # {0}"
             );
         }
@@ -2009,7 +2050,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, from 1, to MAX
-  -> 3, Jump
+  -> 3, Repetition %0, from 1, to MAX
 - 5
   -> 7, Jump
 - 6
@@ -2041,26 +2082,31 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 1
+  -> 3, Repetition anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
-  -> 8, Jump
-- 6
-  -> 7, Char 'b'
-- 7
-  -> 10, Counter inc %1
-- 8
-  -> 9, Counter reset %1
-- 9
   -> 6, Jump
+- 6
+  -> 7, Jump
+  -> 5, Backtrack %0 -> 5
+- 7
+  -> 10, Jump
+- 8
+  -> 9, Char 'b'
+- 9
+  -> 12, Counter inc %1
 - 10
-  -> 11, Counter check %1, from 1, to MAX
-  -> 9, Jump
+  -> 11, Counter reset %1
 - 11
-  -> 13, Capture end {0}
-> 12
+  -> 8, Jump
+- 12
+  -> 13, Counter check %1, from 1, to MAX
+  -> 11, Repetition %1, from 1, to MAX
+- 13
+  -> 15, Capture end {0}
+> 14
   -> 2, Capture start {0}
-< 13
+< 15
 # {0}"
             );
         }
@@ -2068,7 +2114,7 @@ define(letter, ['a'..'f', char_space])
 
     #[test]
     fn test_compile_repeat_specified() {
-        // repeat 1+
+        // repeat >1
         {
             let image = compile_from_str(r#"'a'{2}"#).unwrap();
             let s = image.get_image_text();
@@ -2086,7 +2132,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, times 2
-  -> 3, Jump
+  -> 3, Repetition %0, times 2
 - 5
   -> 7, Capture end {0}
 > 6
@@ -2152,13 +2198,18 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 3
+  -> 3, Repetition anchor %0, from 3, to 5
   -> 5, Counter check %0, from 3, to 5
 - 5
-  -> 7, Capture end {0}
-> 6
+  -> 6, Jump
+- 6
+  -> 7, Jump
+  -> 5, Backtrack %0 -> 5
+- 7
+  -> 9, Capture end {0}
+> 8
   -> 2, Capture start {0}
-< 7
+< 9
 # {0}"
             );
         }
@@ -2181,7 +2232,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, from 3, to 5
-  -> 3, Jump
+  -> 3, Repetition %0, from 3, to 5
 - 5
   -> 7, Capture end {0}
 > 6
@@ -2224,18 +2275,23 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 1
+  -> 3, Repetition anchor %0, from 1, to 5
   -> 5, Counter check %0, from 1, to 5
 - 5
-  -> 7, Jump
+  -> 6, Jump
 - 6
-  -> 2, Jump
   -> 7, Jump
+  -> 5, Backtrack %0 -> 5
 - 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
+  -> 9, Jump
+- 8
+  -> 2, Jump
+  -> 9, Jump
+- 9
+  -> 11, Capture end {0}
+> 10
+  -> 8, Capture start {0}
+< 11
 # {0}"
             );
         }
@@ -2258,7 +2314,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, from 1, to 5
-  -> 3, Jump
+  -> 3, Repetition %0, from 1, to 5
 - 5
   -> 7, Jump
 - 6
@@ -2326,13 +2382,18 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, threshold 3
+  -> 3, Repetition anchor %0, from 3, to MAX
   -> 5, Counter check %0, from 3, to MAX
 - 5
-  -> 7, Capture end {0}
-> 6
+  -> 6, Jump
+- 6
+  -> 7, Jump
+  -> 5, Backtrack %0 -> 5
+- 7
+  -> 9, Capture end {0}
+> 8
   -> 2, Capture start {0}
-< 7
+< 9
 # {0}"
             );
         }
@@ -2355,7 +2416,7 @@ define(letter, ['a'..'f', char_space])
   -> 0, Jump
 - 4
   -> 5, Counter check %0, from 3, to MAX
-  -> 3, Jump
+  -> 3, Repetition %0, from 3, to MAX
 - 5
   -> 7, Capture end {0}
 > 6

@@ -6,7 +6,19 @@
 
 use std::fmt::Display;
 
-use crate::{ast::AssertionName, instance::Instance};
+use crate::{
+    ast::AssertionName,
+    instance::{CapturePosition, Instance},
+};
+
+trait TransitionTrait {
+    fn check(&self, context: &mut Instance) -> CheckResult;
+}
+
+pub enum CheckResult {
+    Success(/* position forward */ usize),
+    Failure,
+}
 
 pub enum Transition {
     Jump(JumpTransition),
@@ -25,7 +37,9 @@ pub enum Transition {
     CounterReset(CounterResetTransition),
     CounterInc(CounterIncTransition),
     CounterCheck(CounterCheckTransition),
-    RepetionAnchor(RepetitionAnchorTransition),
+
+    Repetition(RepetitionTransition),
+    RepetitionAnchor(RepetitionAnchorTransition),
     Backtrack(BacktrackingTransition),
 
     // assertion
@@ -48,7 +62,8 @@ impl Display for Transition {
             Transition::CounterReset(c) => write!(f, "{}", c),
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
-            Transition::RepetionAnchor(r) => write!(f, "{}", r),
+            Transition::Repetition(r) => write!(f, "{}", r),
+            Transition::RepetitionAnchor(r) => write!(f, "{}", r),
             Transition::Backtrack(b) => write!(f, "{}", b),
             Transition::LookAheadAssertion(l) => write!(f, "{}", l),
             Transition::LookBehindAssertion(l) => write!(f, "{}", l),
@@ -56,33 +71,14 @@ impl Display for Transition {
     }
 }
 
-trait TransitionTrait {
-    fn check(&self, context: &Instance) -> CheckResult;
-
-    // Not all transitions have a fixed length, e.g.
-    // the length of "a{3,5}" varies, but the
-    // "a{3}" is 3.
-    //
-    // Returns `None` for a non-fixed length.
-    // fn length(&self) -> Option<usize>;
-}
-
-pub enum CheckResult {
-    Success(/* forward */ usize),
-    Failure,
-}
-
 // Jump/Epsilon
 pub struct JumpTransition;
 
 impl TransitionTrait for JumpTransition {
-    fn check(&self, _context: &Instance) -> CheckResult {
+    fn check(&self, _context: &mut Instance) -> CheckResult {
+        // always success
         CheckResult::Success(0)
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
 }
 
 impl Display for JumpTransition {
@@ -102,17 +98,21 @@ impl CharTransition {
 }
 
 impl TransitionTrait for CharTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        if self.character == context.get_current_char() {
-            CheckResult::Success(1)
-        } else {
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let thread = context.get_current_thread();
+        let position = thread.get_position();
+
+        if position >= thread.end {
             CheckResult::Failure
+        } else {
+            let current_char = context.get_char(position);
+            if self.character == current_char {
+                CheckResult::Success(1)
+            } else {
+                CheckResult::Failure
+            }
         }
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(1)
-    // }
 }
 
 impl Display for CharTransition {
@@ -124,21 +124,26 @@ impl Display for CharTransition {
 pub struct SpecialCharTransition;
 
 impl TransitionTrait for SpecialCharTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        // 'special char' currently contains only the 'char_any'.
+        //
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
         // \n, \r, \u2028 or \u2029
 
-        let c = context.get_current_char();
-        if c != '\n' && c != '\r' {
-            CheckResult::Success(1)
-        } else {
+        let thread = context.get_current_thread();
+        let position = thread.get_position();
+
+        if position >= thread.end {
             CheckResult::Failure
+        } else {
+            let current_char = context.get_char(position);
+            if current_char != '\n' && current_char != '\r' {
+                CheckResult::Success(1)
+            } else {
+                CheckResult::Failure
+            }
         }
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(1)
-    // }
 }
 
 impl Display for SpecialCharTransition {
@@ -161,30 +166,28 @@ impl StringTransition {
 }
 
 impl TransitionTrait for StringTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        let pos = context.get_current_position();
-        if pos + self.length >= context.chars.len() {
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let thread = context.get_current_thread();
+        let position = thread.get_position();
+
+        if position + self.length >= thread.end {
             CheckResult::Failure
         } else {
-            let mut same = true;
-            for i in 0..self.length {
-                if self.chars[i] != context.get_char(i + pos) {
-                    same = false;
+            let mut is_same = true;
+            for idx in 0..self.length {
+                if self.chars[idx] != context.get_char(idx + position) {
+                    is_same = false;
                     break;
                 }
             }
 
-            if same {
+            if is_same {
                 CheckResult::Success(self.length)
             } else {
                 CheckResult::Failure
             }
         }
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(self.length)
-    // }
 }
 
 impl Display for StringTransition {
@@ -299,14 +302,21 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
 }
 
 impl TransitionTrait for CharSetTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        let current = context.get_current_char();
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let thread = context.get_current_thread();
+        let position = thread.get_position();
+
+        if position >= thread.end {
+            return CheckResult::Failure;
+        }
+
+        let current_char = context.get_char(position);
         let mut found: bool = false;
 
         for item in &self.items {
             found = match item {
-                CharSetItem::Char(c) => current == *c,
-                CharSetItem::Range(r) => current >= r.start && current <= r.end_included,
+                CharSetItem::Char(c) => current_char == *c,
+                CharSetItem::Range(r) => current_char >= r.start && current_char <= r.end_included,
             };
 
             if found {
@@ -320,10 +330,6 @@ impl TransitionTrait for CharSetTransition {
             CheckResult::Failure
         }
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(1)
-    // }
 }
 
 impl Display for CharSetTransition {
@@ -362,13 +368,20 @@ impl AssertionTransition {
 }
 
 impl TransitionTrait for AssertionTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
-    }
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let success = match self.name {
+            AssertionName::Start => context.is_first_char(),
+            AssertionName::End => context.is_last_char(),
+            AssertionName::IsBound => context.is_word_bound(),
+            AssertionName::IsNotBound => !context.is_word_bound(),
+        };
 
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
+        if success {
+            CheckResult::Success(0)
+        } else {
+            CheckResult::Failure
+        }
+    }
 }
 
 impl Display for AssertionTransition {
@@ -388,13 +401,36 @@ impl BackReferenceTransition {
 }
 
 impl TransitionTrait for BackReferenceTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
-    }
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let CapturePosition {
+            start,
+            end_included,
+        } = &context.capture_positions[self.capture_index];
 
-    // fn length(&self) -> Option<usize> {
-    //     None
-    // }
+        let chars = &context.chars[*start..=*end_included];
+        let length = end_included - start + 1;
+
+        let thread = context.get_current_thread();
+        let position = thread.get_position();
+
+        if position + length >= thread.end {
+            CheckResult::Failure
+        } else {
+            let mut is_same = true;
+            for idx in 0..length {
+                if chars[idx] != context.get_char(idx + position) {
+                    is_same = false;
+                    break;
+                }
+            }
+
+            if is_same {
+                CheckResult::Success(length)
+            } else {
+                CheckResult::Failure
+            }
+        }
+    }
 }
 
 impl Display for BackReferenceTransition {
@@ -424,23 +460,19 @@ impl CaptureEndTransition {
 }
 
 impl TransitionTrait for CaptureStartTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let position = context.get_current_position();
+        context.capture_positions[self.capture_index].start = position;
+        CheckResult::Success(0)
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
 }
 
 impl TransitionTrait for CaptureEndTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        let position = context.get_current_position();
+        context.capture_positions[self.capture_index].end_included = position;
+        CheckResult::Success(0)
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
 }
 
 impl Display for CaptureStartTransition {
@@ -496,33 +528,36 @@ impl CounterCheckTransition {
 }
 
 impl TransitionTrait for CounterResetTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
-    }
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        // reset counter
+        context.counters[self.counter_index] = 0;
 
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
+        // reset anchors also
+        context.anchors[self.counter_index] = vec![];
+
+        CheckResult::Success(0)
+    }
 }
 
 impl TransitionTrait for CounterIncTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
-        todo!()
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        context.counters[self.counter_index] += 1;
+        CheckResult::Success(0)
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
 }
 
 impl TransitionTrait for CounterCheckTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        /**
+         *
+         *
+         *
+         *
+         *
+         *
+         */
         todo!()
     }
-
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
 }
 
 impl Display for CounterResetTransition {
@@ -562,39 +597,66 @@ impl Display for RepetitionType {
     }
 }
 
+pub struct RepetitionTransition {
+    counter_index: usize,
+    repetition_type: RepetitionType,
+}
+
 pub struct RepetitionAnchorTransition {
     counter_index: usize,
 
-    // to indicate when to start recording,
-    // the value of 'threshold' is the times (included) of repetition.
-    threshold: usize,
+    // // to indicate when to start recording,
+    // // the value of 'threshold' is the times (included) of repetition.
+    // threshold: usize,
+    repetition_type: RepetitionType,
 }
 
-impl RepetitionAnchorTransition {
-    pub fn new(counter_index: usize, threshold: usize) -> Self {
-        RepetitionAnchorTransition {
+impl RepetitionTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        RepetitionTransition {
             counter_index,
-            threshold,
+            repetition_type,
         }
     }
 }
 
-impl TransitionTrait for RepetitionAnchorTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+impl RepetitionAnchorTransition {
+    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+        RepetitionAnchorTransition {
+            counter_index,
+            repetition_type,
+        }
+    }
+}
+
+impl TransitionTrait for RepetitionTransition {
+    fn check(&self, context: &mut Instance) -> CheckResult {
         todo!()
     }
+}
 
-    // fn length(&self) -> Option<usize> {
-    //     Some(0)
-    // }
+impl TransitionTrait for RepetitionAnchorTransition {
+    fn check(&self, context: &mut Instance) -> CheckResult {
+        todo!()
+    }
+}
+
+impl Display for RepetitionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Repetition %{}, {}",
+            self.counter_index, self.repetition_type
+        )
+    }
 }
 
 impl Display for RepetitionAnchorTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Repetition anchor %{}, threshold {}",
-            self.counter_index, self.threshold
+            "Repetition anchor %{}, {}",
+            self.counter_index, self.repetition_type
         )
     }
 }
@@ -614,7 +676,7 @@ impl BacktrackingTransition {
 }
 
 impl TransitionTrait for BacktrackingTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+    fn check(&self, context: &mut Instance) -> CheckResult {
         // move back the position by anchor,
         // and build a stackframe for the target state node
         // todo
@@ -663,7 +725,7 @@ impl LookBehindAssertionTransition {
 }
 
 impl TransitionTrait for LookAheadAssertionTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+    fn check(&self, context: &mut Instance) -> CheckResult {
         todo!()
     }
 
@@ -673,7 +735,7 @@ impl TransitionTrait for LookAheadAssertionTransition {
 }
 
 impl TransitionTrait for LookBehindAssertionTransition {
-    fn check(&self, context: &Instance) -> CheckResult {
+    fn check(&self, context: &mut Instance) -> CheckResult {
         todo!()
     }
 
