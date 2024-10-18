@@ -50,7 +50,6 @@ pub enum Token {
     /*
      * Notations/Symbols
      */
-
     // ?
     Question,
 

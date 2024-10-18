@@ -10,7 +10,6 @@ mod commentcleaner;
 mod compiler;
 mod error;
 mod errorprinter;
-mod route;
 mod lexer;
 mod location;
 mod macroexpander;
@@ -23,3 +22,7 @@ mod transition;
 pub mod instance;
 pub mod matcher;
 pub mod process;
+pub mod route;
+
+pub use compiler::compile_from_str;
+pub use matcher::{match_all, match_one, test};

@@ -7,8 +7,8 @@
 use crate::{
     compiler::compile_from_str,
     error::Error,
-    route::{Route, MAIN_LINE_INDEX},
     instance::{Instance, MatchRange, Thread},
+    route::{Route, MAIN_LINE_INDEX},
     transition::CheckResult,
 };
 
@@ -57,11 +57,7 @@ impl<'a, 'b> Instance<'a, 'b> {
                 .map(|(range, name_opt)| MatchGroup {
                     start: range.start,
                     end: range.end,
-                    name: if let Some(n) = *name_opt {
-                        Some(n.to_owned())
-                    } else {
-                        None
-                    },
+                    name: (*name_opt).map(|n| n.to_owned()),
                     value: get_sub_string(chars, range.start, range.end),
                 })
                 .collect();
@@ -141,11 +137,7 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
         let thread = instance.get_current_thread_ref();
         let line_index = thread.line_index;
         let line = &instance.route.lines[line_index];
-        (
-            line_index,
-            line.start_node_index,
-            line.end_node_index,
-        )
+        (line_index, line.start_node_index, line.end_node_index)
     };
 
     // DEBUG::
@@ -157,9 +149,8 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
     // add transitions of the entry node
     instance.append_tasks_by_node(entry_node_index, position);
 
-    while !instance.get_current_thread_ref_mut().stack.is_empty() {
-        // take the last task
-        let task = instance.get_current_thread_ref_mut().stack.pop().unwrap();
+    // take the last task
+    while let Some(task) = instance.get_current_thread_ref_mut().stack.pop() {
 
         // get the transition
         let line = &instance.route.lines[line_index];
@@ -307,6 +298,8 @@ mod tests {
             let chars = "a*1**_***".chars().collect::<Vec<char>>();
             let mut instance = process.new_instance(&chars);
             assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
         }
     }
 }

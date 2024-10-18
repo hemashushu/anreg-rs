@@ -22,17 +22,17 @@ use crate::{
     },
 };
 
+pub fn compile_from_str(s: &str) -> Result<Route, Error> {
+    let program = parse_from_str(s)?;
+    compile(&program)
+}
+
 pub fn compile(program: &Program) -> Result<Route, Error> {
     let mut route = Route::new();
     let mut compiler = Compiler::new(program, &mut route);
     compiler.compile()?;
 
     Ok(route)
-}
-
-pub fn compile_from_str(s: &str) -> Result<Route, Error> {
-    let program = parse_from_str(s)?;
-    compile(&program)
 }
 
 pub struct Compiler<'a> {
@@ -61,7 +61,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile(&mut self) -> Result<(), Error> {
-        self.emit_program(&self.program)
+        self.emit_program(self.program)
     }
 
     fn emit_program(&mut self, program: &Program) -> Result<(), Error> {
@@ -197,7 +197,7 @@ impl<'a> Compiler<'a> {
             ports.push(self.emit_expression(expression)?);
         }
 
-        let port = if ports.len() == 0 {
+        let port = if ports.is_empty() {
             // empty expression
             self.emit_empty()?
         } else if ports.len() == 1 {
@@ -274,14 +274,14 @@ impl<'a> Compiler<'a> {
         let expression = &function_call.expression;
         let args = &function_call.args;
 
-        let is_lazy = match &function_call.name {
+        let is_lazy = matches!(
+            function_call.name,
             FunctionName::OptionalLazy
-            | FunctionName::OneOrMoreLazy
-            | FunctionName::ZeroOrMoreLazy
-            | FunctionName::RepeatRangeLazy
-            | FunctionName::AtLeastLazy => true,
-            _ => false,
-        };
+                | FunctionName::OneOrMoreLazy
+                | FunctionName::ZeroOrMoreLazy
+                | FunctionName::RepeatRangeLazy
+                | FunctionName::AtLeastLazy
+        );
 
         match &function_call.name {
             // Quantifier
@@ -352,20 +352,18 @@ impl<'a> Compiler<'a> {
                         let port = self.emit_repeat_range(expression, 1, to, is_lazy)?;
                         self.continue_emit_optional(port, is_lazy)
                     }
+                } else if to == 1 {
+                    // {1,1}
+                    // return the expression without repetition
+                    self.emit_expression(expression)
+                } else if from == to {
+                    // {m,m}
+                    // repeat specified
+                    self.emit_repeat_specified(expression, from)
                 } else {
-                    if to == 1 {
-                        // {1,1}
-                        // return the expression without repetition
-                        self.emit_expression(expression)
-                    } else if from == to {
-                        // {m,m}
-                        // repeat specified
-                        self.emit_repeat_specified(expression, from)
-                    } else {
-                        // {m,n}
-                        // repeat range
-                        self.emit_repeat_range(expression, from, to, is_lazy)
-                    }
+                    // {m,n}
+                    // repeat range
+                    self.emit_repeat_range(expression, from, to, is_lazy)
                 }
             }
             FunctionName::AtLeast | FunctionName::AtLeastLazy => {

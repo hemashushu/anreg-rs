@@ -41,7 +41,7 @@ pub enum Expression {
 #[derive(Debug, PartialEq)]
 pub struct FunctionCall {
     pub name: FunctionName,
-    pub expression: Box<Expression>,    // the index 0 arg
+    pub expression: Box<Expression>, // the index 0 arg
     pub args: Vec<FunctionCallArg>,
 }
 
@@ -101,6 +101,7 @@ impl Display for AssertionName {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PresetCharSetName {
     CharWord,

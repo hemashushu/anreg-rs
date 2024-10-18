@@ -174,7 +174,7 @@ impl<'a> Parser<'a> {
         // let mut definitions = vec![];
         let mut expressions = vec![];
 
-        while let Some(_) = self.peek_token(0) {
+        while self.peek_token(0).is_some() {
             let expression = self.parse_expression()?;
             expressions.push(expression);
 

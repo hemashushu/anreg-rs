@@ -96,9 +96,7 @@ fn replace_identifiers(
     mut definitions: Vec<Definition>,
 ) -> Vec<TokenWithRange> {
     definitions.reverse();
-    while !definitions.is_empty() {
-        let definition = definitions.pop().unwrap();
-
+    while let Some(definition) = definitions.pop() {
         for idx in (0..definitions.len()).rev() {
             find_and_replace_identifiers(
                 &mut definitions[idx].tokens,

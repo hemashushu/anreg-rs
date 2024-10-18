@@ -24,8 +24,8 @@ pub const MAIN_LINE_INDEX: usize = 0;
 // the compile target
 pub struct Route {
     pub lines: Vec<Line>,
-    capture_groups: Vec<CaptureGroup>,
-    number_of_counters: usize,
+    pub capture_groups: Vec<CaptureGroup>,
+    pub number_of_counters: usize,
 }
 
 pub struct Line {
@@ -51,8 +51,8 @@ pub struct TransitionItem {
     pub target_node_index: usize, // the index of next node
 }
 
-struct CaptureGroup {
-    name: Option<String>,
+pub struct CaptureGroup {
+    pub name: Option<String>,
 }
 
 impl Route {
@@ -143,6 +143,12 @@ impl Route {
         }
 
         ss.join("\n")
+    }
+}
+
+impl Default for Route {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

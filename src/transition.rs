@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use crate::{
     ast::AssertionName,
-    instance::{Instance, MatchRange, Task},
+    instance::{Instance, MatchRange},
 };
 
 pub enum Transition {
@@ -48,73 +48,73 @@ pub struct CharTransition {
 pub struct SpecialCharTransition;
 
 pub struct StringTransition {
-    chars: Vec<char>,
-    length: usize,
+    pub chars: Vec<char>,
+    pub length: usize,
 }
 
 pub struct CharSetTransition {
-    items: Vec<CharSetItem>,
-    negative: bool,
+    pub items: Vec<CharSetItem>,
+    pub negative: bool,
 }
 
 pub struct CharRange {
-    start: char,
-    end_included: char,
+    pub start: char,
+    pub end_included: char,
 }
 
 pub struct BackReferenceTransition {
-    capture_group_index: usize,
+    pub capture_group_index: usize,
 }
 
 pub struct AssertionTransition {
-    name: AssertionName,
+    pub name: AssertionName,
 }
 
 pub struct CaptureStartTransition {
-    capture_group_index: usize,
+    pub capture_group_index: usize,
 }
 
 pub struct CaptureEndTransition {
-    capture_group_index: usize,
+    pub capture_group_index: usize,
 }
 
 pub struct CounterResetTransition {
-    counter_index: usize,
+    pub counter_index: usize,
 }
 
 pub struct CounterIncTransition {
-    counter_index: usize,
+    pub counter_index: usize,
 }
 
 pub struct CounterCheckTransition {
-    counter_index: usize,
-    repetition_type: RepetitionType,
+    pub counter_index: usize,
+    pub repetition_type: RepetitionType,
 }
 
 pub struct RepetitionTransition {
-    counter_index: usize,
-    repetition_type: RepetitionType,
+    pub counter_index: usize,
+    pub repetition_type: RepetitionType,
 }
 
 pub struct RepetitionAnchorTransition {
-    counter_index: usize,
-    repetition_type: RepetitionType,
+    pub counter_index: usize,
+    pub repetition_type: RepetitionType,
 }
 
 pub struct BacktrackingTransition {
-    counter_index: usize,
-    anchor_node_index: usize,
+    pub counter_index: usize,
+    pub anchor_node_index: usize,
 }
 
 pub struct LookAheadAssertionTransition {
-    line_index: usize,
-    negative: bool,
+    pub line_index: usize,
+    pub negative: bool,
 }
 
 pub struct LookBehindAssertionTransition {
-    line_index: usize,
-    negative: bool,
-    pattern_chars_length: usize,
+    pub line_index: usize,
+    pub negative: bool,
+    pub pattern_chars_length: usize,
 }
 
 impl CharTransition {
@@ -298,7 +298,7 @@ impl BacktrackingTransition {
     pub fn new(counter_index: usize, anchor_node_index: usize) -> Self {
         BacktrackingTransition {
             counter_index,
-            anchor_node_index
+            anchor_node_index,
         }
     }
 }
@@ -624,8 +624,9 @@ impl Transition {
                     CheckResult::Failure
                 } else {
                     let mut is_same = true;
-                    for idx in 0..length {
-                        if chars[idx] != get_char(instance, idx + position) {
+                    // for idx in 0..length {
+                    for (idx, c) in chars.iter().enumerate() {
+                        if *c != get_char(instance, idx + position) {
                             is_same = false;
                             break;
                         }
@@ -725,8 +726,8 @@ impl Transition {
 
                 CheckResult::Failure
             }
-            Transition::LookAheadAssertion(transition) => todo!(),
-            Transition::LookBehindAssertion(transition) => todo!(),
+            Transition::LookAheadAssertion(_transition) => todo!(),
+            Transition::LookBehindAssertion(_transition) => todo!(),
         }
     }
 }

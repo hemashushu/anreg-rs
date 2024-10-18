@@ -12,10 +12,10 @@ use crate::{
 pub fn clean(tokens: Vec<TokenWithRange>) -> Vec<TokenWithRange> {
     // remove all comments.
     let mut token_iter = tokens.into_iter();
-    let mut peekable_token_iter = PeekableIter::new(&mut token_iter, 1);
+    let peekable_token_iter = PeekableIter::new(&mut token_iter, 1);
     let mut clean_tokens: Vec<TokenWithRange> = vec![];
 
-    while let Some(tr) = peekable_token_iter.next() {
+    for tr in peekable_token_iter {
         match tr {
             TokenWithRange {
                 token: Token::Comment(_),
@@ -37,7 +37,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        error::Error, lexer::lex_from_str, token::{Token, TokenWithRange}
+        error::Error,
+        lexer::lex_from_str,
+        token::{Token, TokenWithRange},
     };
 
     use super::clean;
