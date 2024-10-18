@@ -6,21 +6,6 @@
 
 use crate::transition::Transition;
 
-/*
-// image
-// |-- state set --\
-// |            |-- state node --\
-// |            |                |- link head --> transition
-// |            |                |- link node --> transition
-// |            |                |- ...
-// |            |                \- link tail --> transition
-// |            |-- state node
-// |            |-- ...
-// |            |-- state node
-// |
-// |-- state set
- */
-
 pub const MAIN_STATESET_INDEX: usize = 0;
 
 // image

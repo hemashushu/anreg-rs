@@ -8,8 +8,8 @@ use crate::{
     compiler::compile_from_str,
     error::Error,
     image::{Image, MAIN_STATESET_INDEX},
-    instance::{CapturePosition, Instance, Thread},
-    transition::{CheckResult, Transition},
+    instance::{Instance, MatchRange, Thread},
+    transition::CheckResult,
 };
 
 pub struct Process {
@@ -19,11 +19,15 @@ pub struct Process {
 impl Process {
     pub fn new(pattern: &str) -> Result<Self, Error> {
         let image = compile_from_str(pattern)?;
+
+        // DEBUG::
+        println!("{}", image.get_image_text());
+
         Ok(Process { image })
     }
 
     pub fn new_instance<'a, 'b: 'a>(&'a self, chars: &'b [char]) -> Instance {
-        Instance::new(&self.image, chars) // , number_of_captures, number_of_counters)
+        Instance::new(&self.image, chars)
     }
 }
 
@@ -34,23 +38,22 @@ impl<'a, 'b> Instance<'a, 'b> {
             return None;
         }
 
-        let match_ranges: Vec<MatchRange> = self
-            .capture_positions
-            .iter()
-            .map(|i| MatchRange {
-                start: i.start,
-                end: i.end_included + 1,
-            })
-            .collect();
-
-        Some(match_ranges)
+        Some(
+            self.match_ranges
+                .iter()
+                .map(|item| item.to_owned())
+                .collect(),
+        )
     }
 
-    pub fn exec_with_result(&mut self, start: usize) -> Option<MatchResult> {
+    pub fn exec_with_values(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
+        let capture_names = self.image.get_capture_names();
+        let chars = self.chars;
+
         if let Some(match_ranges) = self.exec(start) {
             let match_groups: Vec<MatchGroup> = match_ranges
                 .iter()
-                .zip(self.image.get_capture_names().iter())
+                .zip(capture_names.iter())
                 .map(|(range, name_opt)| MatchGroup {
                     start: range.start,
                     end: range.end,
@@ -59,27 +62,18 @@ impl<'a, 'b> Instance<'a, 'b> {
                     } else {
                         None
                     },
-                    value: get_sub_string(&self.chars, range.start, range.end),
+                    value: get_sub_string(chars, range.start, range.end),
                 })
                 .collect();
 
-            let match_result = MatchResult {
-                groups: match_groups,
-            };
-            Some(match_result)
+            Some(match_groups)
         } else {
             None
         }
     }
 }
 
-#[derive(Debug)]
-pub struct MatchRange {
-    pub start: usize, // position included
-    pub end: usize,   // position excluded
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct MatchGroup {
     pub name: Option<String>,
     pub value: String,
@@ -87,9 +81,22 @@ pub struct MatchGroup {
     pub end: usize,   // position excluded
 }
 
-#[derive(Debug)]
-pub struct MatchResult {
-    pub groups: Vec<MatchGroup>,
+impl MatchGroup {
+    pub fn new(name: Option<String>, value: String, start: usize, end: usize) -> Self {
+        MatchGroup {
+            name,
+            value,
+            start,
+            end,
+        }
+    }
+}
+
+pub fn get_group<'a>(groups: &'a [MatchGroup], name: &str) -> Option<&'a MatchGroup> {
+    groups.iter().find(|item| match &item.name {
+        Some(s) => s == name,
+        None => false,
+    })
 }
 
 fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
@@ -104,15 +111,12 @@ fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
 }
 
 fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> bool {
-    // DEBUG
-    println!("{}", instance.image.get_image_text());
-
     // allocate the vector of 'capture positions' and 'repetition counters'
     let number_of_captures = instance.image.get_number_of_captures();
     let number_of_counters = instance.image.get_number_of_counters();
     let main_thread = Thread::new(start, end, MAIN_STATESET_INDEX);
     instance.threads = vec![main_thread];
-    instance.capture_positions = vec![CapturePosition::default(); number_of_captures];
+    instance.match_ranges = vec![MatchRange::default(); number_of_captures];
     instance.counters = vec![0; number_of_counters];
     instance.anchors = vec![vec![]; number_of_counters];
 
@@ -133,7 +137,6 @@ fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> b
 }
 
 fn start_thread(instance: &mut Instance, position: usize) -> bool {
-
     let (stateset_index, entry_state_index, exit_state_index) = {
         let thread = instance.get_current_thread_ref();
         let stateset_index = thread.stateset_index;
@@ -145,7 +148,11 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
         )
     };
 
-    println!("THREAD START----------------- position: {}", position);
+    // DEBUG::
+    println!(
+        "🔶 THREAD START, state set: {}, entry state: {}, position: {}",
+        stateset_index, entry_state_index, position
+    );
 
     // add transitions of the entry state
     instance.append_tasks_by_state(entry_state_index, position);
@@ -159,6 +166,7 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
         let state = &stateset.states[task.state_index];
         let transition_node = &state.transitions[task.transition_index];
 
+        // DEBUG::
         println!("> state: {}, position: {}", task.state_index, task.position);
 
         let position = task.position;
@@ -166,36 +174,107 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
         let target_state_index = transition_node.target_state_index;
 
         let check_result = transition.check(instance, position);
-        match  check_result {
+        match check_result {
             CheckResult::Success(forward) => {
-                println!("  trans: {}, forward: {}, --> state: {}", transition, forward, target_state_index);
+                // DEBUG::
+                println!(
+                    "  trans: {}, forward: {}, -> state: {}",
+                    transition, forward, target_state_index
+                );
 
                 if target_state_index == exit_state_index {
-                    println!("FINISH! < {}", exit_state_index);
+                    println!(
+                        "  THREAD FINISH, state set: {}, state: {}",
+                        stateset_index, exit_state_index
+                    );
                     return true;
                 }
 
                 instance.append_tasks_by_state(target_state_index, position + forward);
-            },
+            }
             CheckResult::Failure => {
-                println!("  trans: {}, X", transition);
-            },
+                // DEBUG::
+                println!("  trans: {}, failed", transition);
+            }
         }
     }
 
+    // DEBUG::
+    println!("  THREAD FAILED, state set: {}", stateset_index);
     false
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::instance::MatchRange;
+
     use super::Process;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_process_raw_char() {
         let process = Process::new("'a'").unwrap();
-        let chars: Vec<char> = "babbaabbb".chars().collect();
-        let mut instance = process.new_instance(&chars);
-        let ranges_opt0 = instance.exec(0);
-        println!("{:?}", ranges_opt0)
+
+        {
+            let chars: Vec<char> = "babbaa".chars().collect();
+            let mut instance = process.new_instance(&chars);
+
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(1, 2)]));
+
+            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(4, 5)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(4, 5)]));
+            assert_eq!(instance.exec(4), Some(vec![MatchRange::new(4, 5)]));
+
+            assert_eq!(instance.exec(5), Some(vec![MatchRange::new(5, 6)]));
+
+            // exceed the length of chars
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let chars: Vec<char> = "xyz".chars().collect();
+            let mut instance = process.new_instance(&chars);
+
+            assert_eq!(instance.exec(0), None);
+            assert_eq!(instance.exec(1), None);
+            assert_eq!(instance.exec(2), None);
+
+            // exceed the length of chars
+            assert_eq!(instance.exec(3), None);
+        }
+    }
+
+    #[test]
+    fn test_process_raw_string() {
+        let process = Process::new("\"abc\"").unwrap();
+
+        {
+            let chars: Vec<char> = "aababcaabc".chars().collect();
+            let mut instance = process.new_instance(&chars);
+
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(3, 6)]));
+
+            assert_eq!(instance.exec(4), Some(vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(5), Some(vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(7), Some(vec![MatchRange::new(7, 10)]));
+
+            assert_eq!(instance.exec(8), None);
+            assert_eq!(instance.exec(10), None);
+        }
+
+        {
+            let chars: Vec<char> = "uvwxyz".chars().collect();
+            let mut instance = process.new_instance(&chars);
+
+            assert_eq!(instance.exec(0), None);
+            assert_eq!(instance.exec(1), None);
+            assert_eq!(instance.exec(5), None);
+
+            assert_eq!(instance.exec(6), None);
+        }
     }
 }
+

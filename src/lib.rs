@@ -11,7 +11,6 @@ mod compiler;
 mod error;
 mod errorprinter;
 mod image;
-mod instance;
 mod lexer;
 mod location;
 mod macroexpander;
@@ -21,5 +20,6 @@ mod peekableiter;
 mod token;
 mod transition;
 
+pub mod instance;
 pub mod matcher;
 pub mod process;

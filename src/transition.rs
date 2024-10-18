@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use crate::{
     ast::AssertionName,
-    instance::{CapturePosition, Instance},
+    instance::{Instance, MatchRange},
 };
 
 pub enum Transition {
@@ -536,7 +536,7 @@ impl Transition {
                     }
                 }
             }
-            Transition::SpecialChar(transition) => {
+            Transition::SpecialChar(_transition) => {
                 // 'special char' currently contains only the 'char_any'.
                 //
                 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
@@ -558,7 +558,7 @@ impl Transition {
             Transition::String(transition) => {
                 let thread = instance.get_current_thread_ref();
 
-                if position + transition.length >= thread.end_position {
+                if position + transition.length > thread.end_position {
                     CheckResult::Failure
                 } else {
                     let mut is_same = true;
@@ -606,13 +606,10 @@ impl Transition {
                 }
             }
             Transition::BackReference(transition) => {
-                let CapturePosition {
-                    start,
-                    end_included,
-                } = &instance.capture_positions[transition.capture_index];
+                let MatchRange { start, end } = &instance.match_ranges[transition.capture_index];
 
-                let chars = &instance.chars[*start..=*end_included];
-                let length = end_included - start + 1;
+                let chars = &instance.chars[*start..*end];
+                let length = end - start;
 
                 let thread = instance.get_current_thread_ref();
 
@@ -649,11 +646,11 @@ impl Transition {
                 }
             }
             Transition::CaptureStart(transition) => {
-                instance.capture_positions[transition.capture_index].start = position;
+                instance.match_ranges[transition.capture_index].start = position;
                 CheckResult::Success(0)
             }
             Transition::CaptureEnd(transition) => {
-                instance.capture_positions[transition.capture_index].end_included = position;
+                instance.match_ranges[transition.capture_index].end = position;
                 CheckResult::Success(0)
             }
             Transition::CounterReset(transition) => {
