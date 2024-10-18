@@ -63,7 +63,7 @@ pub struct CharRange {
 }
 
 pub struct BackReferenceTransition {
-    capture_index: usize,
+    capture_group_index: usize,
 }
 
 pub struct AssertionTransition {
@@ -71,11 +71,11 @@ pub struct AssertionTransition {
 }
 
 pub struct CaptureStartTransition {
-    capture_index: usize,
+    capture_group_index: usize,
 }
 
 pub struct CaptureEndTransition {
-    capture_index: usize,
+    capture_group_index: usize,
 }
 
 pub struct CounterResetTransition {
@@ -220,8 +220,8 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
 }
 
 impl BackReferenceTransition {
-    pub fn new(capture_index: usize) -> Self {
-        BackReferenceTransition { capture_index }
+    pub fn new(capture_group_index: usize) -> Self {
+        BackReferenceTransition { capture_group_index }
     }
 }
 
@@ -232,14 +232,14 @@ impl AssertionTransition {
 }
 
 impl CaptureStartTransition {
-    pub fn new(capture_index: usize) -> Self {
-        CaptureStartTransition { capture_index }
+    pub fn new(capture_group_index: usize) -> Self {
+        CaptureStartTransition { capture_group_index }
     }
 }
 
 impl CaptureEndTransition {
-    pub fn new(capture_index: usize) -> Self {
-        CaptureEndTransition { capture_index }
+    pub fn new(capture_group_index: usize) -> Self {
+        CaptureEndTransition { capture_group_index }
     }
 }
 
@@ -398,7 +398,7 @@ impl Display for CharSetTransition {
 
 impl Display for BackReferenceTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Back reference {{{}}}", self.capture_index)
+        write!(f, "Back reference {{{}}}", self.capture_group_index)
     }
 }
 
@@ -410,13 +410,13 @@ impl Display for AssertionTransition {
 
 impl Display for CaptureStartTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Capture start {{{}}}", self.capture_index)
+        write!(f, "Capture start {{{}}}", self.capture_group_index)
     }
 }
 
 impl Display for CaptureEndTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Capture end {{{}}}", self.capture_index)
+        write!(f, "Capture end {{{}}}", self.capture_group_index)
     }
 }
 
@@ -606,7 +606,7 @@ impl Transition {
                 }
             }
             Transition::BackReference(transition) => {
-                let MatchRange { start, end } = &instance.match_ranges[transition.capture_index];
+                let MatchRange { start, end } = &instance.match_ranges[transition.capture_group_index];
 
                 let chars = &instance.chars[*start..*end];
                 let length = end - start;
@@ -646,11 +646,11 @@ impl Transition {
                 }
             }
             Transition::CaptureStart(transition) => {
-                instance.match_ranges[transition.capture_index].start = position;
+                instance.match_ranges[transition.capture_group_index].start = position;
                 CheckResult::Success(0)
             }
             Transition::CaptureEnd(transition) => {
-                instance.match_ranges[transition.capture_index].end = position;
+                instance.match_ranges[transition.capture_group_index].end = position;
                 CheckResult::Success(0)
             }
             Transition::CounterReset(transition) => {

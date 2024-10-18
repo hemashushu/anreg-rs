@@ -24,7 +24,7 @@ pub const MAIN_STATESET_INDEX: usize = 0;
 // the compile target
 pub struct Image {
     pub statesets: Vec<StateSet>,
-    captures: Vec<Capture>,
+    capture_groups: Vec<CaptureGroup>,
     number_of_counters: usize,
 }
 
@@ -64,7 +64,7 @@ pub struct TransitionNode {
     pub target_state_index: usize, // the index of next state
 }
 
-struct Capture {
+struct CaptureGroup {
     name: Option<String>,
 }
 
@@ -72,7 +72,7 @@ impl Image {
     pub fn new() -> Self {
         Image {
             statesets: vec![],
-            captures: vec![],
+            capture_groups: vec![],
             number_of_counters: 0,
         }
     }
@@ -103,21 +103,21 @@ impl Image {
     //     &mut self.statesets[idx]
     // }
 
-    pub fn new_match(&mut self, name: Option<String>) -> usize {
-        let idx = self.captures.len();
-        self.captures.push(Capture { name });
+    pub fn new_capture_group(&mut self, name: Option<String>) -> usize {
+        let idx = self.capture_groups.len();
+        self.capture_groups.push(CaptureGroup { name });
         idx
     }
 
-    pub fn get_capture_index_by_name(&self, name: &str) -> Option<usize> {
-        self.captures.iter().position(|e| match &e.name {
+    pub fn get_capture_group_index_by_name(&self, name: &str) -> Option<usize> {
+        self.capture_groups.iter().position(|e| match &e.name {
             Some(n) => n == name,
             None => false,
         })
     }
 
-    pub fn get_capture_names(&self) -> Vec<Option<&String>> {
-        self.captures
+    pub fn get_capture_group_names(&self) -> Vec<Option<&String>> {
+        self.capture_groups
             .iter()
             .map(|item| {
                 if let Some(name) = &item.name {
@@ -129,40 +129,13 @@ impl Image {
             .collect()
     }
 
-    pub fn get_number_of_captures(&self) -> usize {
-        self.captures.len()
+    pub fn get_number_of_capture_groups(&self) -> usize {
+        self.capture_groups.len()
     }
 
     pub fn get_number_of_counters(&self) -> usize {
         self.number_of_counters
     }
-
-    // for debug
-    /*
-    pub fn get_image_text_verbose(&self) -> String {
-        let mut lines = vec![];
-        if self.statesets.len() == 1 {
-            lines.push(self.statesets[0].get_stateset_text_verbose());
-        } else {
-            for (stateset_index, stateset) in self.statesets.iter().enumerate() {
-                lines.push(format!("stateset: ${}", stateset_index));
-                lines.push(stateset.get_stateset_text_verbose());
-            }
-        }
-
-        // matches
-        for (match_index, m) in self.captures.iter().enumerate() {
-            let match_line = if let Some(n) = &m.name {
-                format!("# group {{idx:{}}}, {}", match_index, n)
-            } else {
-                format!("# group {{idx:{}}}", match_index)
-            };
-            lines.push(match_line);
-        }
-
-        lines.join("\n")
-    }
-    */
 
     // for debug
     pub fn get_image_text(&self) -> String {
@@ -177,11 +150,11 @@ impl Image {
         }
 
         // matches
-        for (match_index, m) in self.captures.iter().enumerate() {
-            let match_line = if let Some(n) = &m.name {
-                format!("# {{{}}}, {}", match_index, n)
+        for (capture_group_index, capture_group) in self.capture_groups.iter().enumerate() {
+            let match_line = if let Some(n) = &capture_group.name {
+                format!("# {{{}}}, {}", capture_group_index, n)
             } else {
-                format!("# {{{}}}", match_index)
+                format!("# {{{}}}", capture_group_index)
             };
             lines.push(match_line);
         }
@@ -524,9 +497,9 @@ stateset: $1
         stateset.new_state();
         stateset.new_state();
 
-        image.new_match(None);
-        image.new_match(Some("foo".to_owned()));
-        image.new_match(None);
+        image.new_capture_group(None);
+        image.new_capture_group(Some("foo".to_owned()));
+        image.new_capture_group(None);
 
         assert_str_eq!(
             image.get_image_text(),
@@ -543,8 +516,8 @@ stateset: $1
                    // # group {idx:2}"
         );
 
-        assert_eq!(image.get_capture_index_by_name("foo"), Some(1));
-        assert!(image.get_capture_index_by_name("bar").is_none());
+        assert_eq!(image.get_capture_group_index_by_name("foo"), Some(1));
+        assert!(image.get_capture_group_index_by_name("bar").is_none());
     }
 
     #[test]

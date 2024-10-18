@@ -47,7 +47,7 @@ impl<'a, 'b> Instance<'a, 'b> {
     }
 
     pub fn exec_with_values(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
-        let capture_names = self.image.get_capture_names();
+        let capture_names = self.image.get_capture_group_names();
         let chars = self.chars;
 
         if let Some(match_ranges) = self.exec(start) {
@@ -112,7 +112,7 @@ fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
 
 fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> bool {
     // allocate the vector of 'capture positions' and 'repetition counters'
-    let number_of_captures = instance.image.get_number_of_captures();
+    let number_of_captures = instance.image.get_number_of_capture_groups();
     let number_of_counters = instance.image.get_number_of_counters();
     let main_thread = Thread::new(start, end, MAIN_STATESET_INDEX);
     instance.threads = vec![main_thread];
@@ -212,21 +212,42 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_process_raw_char() {
+    fn test_process_char() {
         let process = Process::new("'a'").unwrap();
 
         {
             let chars: Vec<char> = "babbaa".chars().collect();
             let mut instance = process.new_instance(&chars);
 
+            // match 1
             assert_eq!(instance.exec(0), Some(vec![MatchRange::new(1, 2)]));
             assert_eq!(instance.exec(1), Some(vec![MatchRange::new(1, 2)]));
 
+            // match 2
             assert_eq!(instance.exec(2), Some(vec![MatchRange::new(4, 5)]));
             assert_eq!(instance.exec(3), Some(vec![MatchRange::new(4, 5)]));
             assert_eq!(instance.exec(4), Some(vec![MatchRange::new(4, 5)]));
 
+            // match 3
             assert_eq!(instance.exec(5), Some(vec![MatchRange::new(5, 6)]));
+
+            // exceed the length of chars
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let chars: Vec<char> = "abaabb".chars().collect();
+            let mut instance = process.new_instance(&chars);
+
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(2, 3)]));
+
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(3, 4)]));
+
+            assert_eq!(instance.exec(4), None);
+            assert_eq!(instance.exec(5), None);
 
             // exceed the length of chars
             assert_eq!(instance.exec(6), None);
@@ -246,22 +267,24 @@ mod tests {
     }
 
     #[test]
-    fn test_process_raw_string() {
+    fn test_process_string() {
         let process = Process::new("\"abc\"").unwrap();
 
         {
-            let chars: Vec<char> = "aababcaabc".chars().collect();
+            let chars: Vec<char> = "ababcbcabc".chars().collect();
             let mut instance = process.new_instance(&chars);
 
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(3, 6)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(3, 6)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(2, 5)]));
 
-            assert_eq!(instance.exec(4), Some(vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(7, 10)]));
             assert_eq!(instance.exec(5), Some(vec![MatchRange::new(7, 10)]));
             assert_eq!(instance.exec(7), Some(vec![MatchRange::new(7, 10)]));
 
             assert_eq!(instance.exec(8), None);
+
+            // exceed the length of chars
             assert_eq!(instance.exec(10), None);
         }
 
@@ -276,5 +299,14 @@ mod tests {
             assert_eq!(instance.exec(6), None);
         }
     }
-}
 
+    #[test]
+    fn test_preset_charset() {
+        {
+            let process = Process::new("char_word").unwrap();
+            let chars = "a*1**_***".chars().collect::<Vec<char>>();
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+        }
+    }
+}

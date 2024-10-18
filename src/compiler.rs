@@ -73,8 +73,8 @@ impl<'a> Compiler<'a> {
         // the `Program` node is actually a `Group` which omits the parentheses,
         // in addition, there may be the 'start' and 'end' assertions.
 
-        // create the index 0 match for the program
-        let match_index = self.image.new_match(None);
+        // create the first (index 0) capture group to represent the program itself
+        let capture_group_index = self.image.new_capture_group(None);
 
         let expressions = &program.expressions;
 
@@ -145,8 +145,8 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let capture_start_transition = CaptureStartTransition::new(match_index);
-        let capture_end_transition = CaptureEndTransition::new(match_index);
+        let capture_start_transition = CaptureStartTransition::new(capture_group_index);
+        let capture_end_transition = CaptureEndTransition::new(capture_group_index);
 
         stateset.append_transition(
             in_state_index,
@@ -435,8 +435,8 @@ impl<'a> Compiler<'a> {
             }
 
             // Capture
-            FunctionName::Name => self.emit_capture_name(expression, args),
-            FunctionName::Index => self.emit_capture_index(expression),
+            FunctionName::Name => self.emit_capture_group_by_name(expression, args),
+            FunctionName::Index => self.emit_capture_group_by_index(expression),
         }
     }
 
@@ -589,8 +589,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_backreference(&mut self, name: &str) -> Result<Port, Error> {
-        let match_index_option = self.image.get_capture_index_by_name(name);
-        let match_index = if let Some(i) = match_index_option {
+        let capture_group_index_option = self.image.get_capture_group_index_by_name(name);
+        let capture_group_index = if let Some(i) = capture_group_index_option {
             i
         } else {
             return Err(Error::Message(format!(
@@ -604,12 +604,12 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let transition = Transition::BackReference(BackReferenceTransition::new(match_index));
+        let transition = Transition::BackReference(BackReferenceTransition::new(capture_group_index));
         stateset.append_transition(in_state_index, out_state_index, transition);
         Ok(Port::new(in_state_index, out_state_index))
     }
 
-    fn emit_capture_name(
+    fn emit_capture_group_by_name(
         &mut self,
         expression: &Expression,
         args: &[FunctionCallArg],
@@ -620,19 +620,19 @@ impl<'a> Compiler<'a> {
             unreachable!();
         };
 
-        self.continue_emit_capture(expression, Some(name))
+        self.continue_emit_capture_group(expression, Some(name))
     }
 
-    fn emit_capture_index(&mut self, expression: &Expression) -> Result<Port, Error> {
-        self.continue_emit_capture(expression, None)
+    fn emit_capture_group_by_index(&mut self, expression: &Expression) -> Result<Port, Error> {
+        self.continue_emit_capture_group(expression, None)
     }
 
-    fn continue_emit_capture(
+    fn continue_emit_capture_group(
         &mut self,
         expression: &Expression,
         name_option: Option<String>,
     ) -> Result<Port, Error> {
-        let match_index = self.image.new_match(name_option);
+        let capture_group_index = self.image.new_capture_group(name_option);
         let port = self.emit_expression(expression)?;
 
         //   capture start      box      capture end
@@ -644,8 +644,8 @@ impl<'a> Compiler<'a> {
         let in_state_index = stateset.new_state();
         let out_state_index = stateset.new_state();
 
-        let match_start_transition = CaptureStartTransition::new(match_index);
-        let match_end_transition = CaptureEndTransition::new(match_index);
+        let match_start_transition = CaptureStartTransition::new(capture_group_index);
+        let match_end_transition = CaptureEndTransition::new(capture_group_index);
 
         stateset.append_transition(
             in_state_index,
@@ -1619,7 +1619,7 @@ define(letter, ['a'..'f', char_space])
     }
 
     #[test]
-    fn test_compile_capture_name() {
+    fn test_compile_capture_group_by_name() {
         // function call, and rear function call
         {
             let image = compile_from_str(r#"name('a', foo), 'b'.name(bar)"#).unwrap();
@@ -1760,7 +1760,7 @@ define(letter, ['a'..'f', char_space])
     }
 
     #[test]
-    fn test_compile_capture_index() {
+    fn test_compile_capture_group_by_index() {
         // function call, and rear function call
         {
             let image = compile_from_str(r#"index('a'), 'b'.index()"#).unwrap();
