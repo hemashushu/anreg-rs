@@ -10,7 +10,7 @@ mod commentcleaner;
 mod compiler;
 mod error;
 mod errorprinter;
-mod image;
+mod route;
 mod lexer;
 mod location;
 mod macroexpander;

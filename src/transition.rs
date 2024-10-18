@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use crate::{
     ast::AssertionName,
-    instance::{Instance, MatchRange},
+    instance::{Instance, MatchRange, Task},
 };
 
 pub enum Transition {
@@ -103,16 +103,16 @@ pub struct RepetitionAnchorTransition {
 
 pub struct BacktrackingTransition {
     counter_index: usize,
-    anchor_state_index: usize,
+    anchor_node_index: usize,
 }
 
 pub struct LookAheadAssertionTransition {
-    stateset_index: usize,
+    line_index: usize,
     negative: bool,
 }
 
 pub struct LookBehindAssertionTransition {
-    stateset_index: usize,
+    line_index: usize,
     negative: bool,
     pattern_chars_length: usize,
 }
@@ -221,7 +221,9 @@ pub fn add_preset_digit(items: &mut Vec<CharSetItem>) {
 
 impl BackReferenceTransition {
     pub fn new(capture_group_index: usize) -> Self {
-        BackReferenceTransition { capture_group_index }
+        BackReferenceTransition {
+            capture_group_index,
+        }
     }
 }
 
@@ -233,13 +235,17 @@ impl AssertionTransition {
 
 impl CaptureStartTransition {
     pub fn new(capture_group_index: usize) -> Self {
-        CaptureStartTransition { capture_group_index }
+        CaptureStartTransition {
+            capture_group_index,
+        }
     }
 }
 
 impl CaptureEndTransition {
     pub fn new(capture_group_index: usize) -> Self {
-        CaptureEndTransition { capture_group_index }
+        CaptureEndTransition {
+            capture_group_index,
+        }
     }
 }
 
@@ -289,27 +295,27 @@ impl RepetitionAnchorTransition {
 }
 
 impl BacktrackingTransition {
-    pub fn new(counter_index: usize, anchor_state_index: usize) -> Self {
+    pub fn new(counter_index: usize, anchor_node_index: usize) -> Self {
         BacktrackingTransition {
             counter_index,
-            anchor_state_index,
+            anchor_node_index
         }
     }
 }
 
 impl LookAheadAssertionTransition {
-    pub fn new(stateset_index: usize, negative: bool) -> Self {
+    pub fn new(line_index: usize, negative: bool) -> Self {
         LookAheadAssertionTransition {
-            stateset_index,
+            line_index,
             negative,
         }
     }
 }
 
 impl LookBehindAssertionTransition {
-    pub fn new(stateset_index: usize, negative: bool, pattern_chars_length: usize) -> Self {
+    pub fn new(line_index: usize, negative: bool, pattern_chars_length: usize) -> Self {
         LookBehindAssertionTransition {
-            stateset_index,
+            line_index,
             negative,
             pattern_chars_length,
         }
@@ -482,7 +488,7 @@ impl Display for BacktrackingTransition {
         write!(
             f,
             "Backtrack %{} -> {}",
-            self.counter_index, self.anchor_state_index
+            self.counter_index, self.anchor_node_index
         )
     }
 }
@@ -490,9 +496,9 @@ impl Display for BacktrackingTransition {
 impl Display for LookAheadAssertionTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.negative {
-            write!(f, "Look ahead negative ${}", self.stateset_index)
+            write!(f, "Look ahead negative ${}", self.line_index)
         } else {
-            write!(f, "Look ahead ${}", self.stateset_index)
+            write!(f, "Look ahead ${}", self.line_index)
         }
     }
 }
@@ -503,13 +509,13 @@ impl Display for LookBehindAssertionTransition {
             write!(
                 f,
                 "Look behind negative ${}, pattern length {}",
-                self.stateset_index, self.pattern_chars_length
+                self.line_index, self.pattern_chars_length
             )
         } else {
             write!(
                 f,
                 "Look behind ${}, pattern length {}",
-                self.stateset_index, self.pattern_chars_length
+                self.line_index, self.pattern_chars_length
             )
         }
     }
@@ -606,7 +612,8 @@ impl Transition {
                 }
             }
             Transition::BackReference(transition) => {
-                let MatchRange { start, end } = &instance.match_ranges[transition.capture_group_index];
+                let MatchRange { start, end } =
+                    &instance.match_ranges[transition.capture_group_index];
 
                 let chars = &instance.chars[*start..*end];
                 let length = end - start;
@@ -713,7 +720,7 @@ impl Transition {
 
                 if let Some(previous_position) = previous_position_opt {
                     // build a stackframe for the target state node
-                    todo!()
+                    instance.append_tasks_by_node(transition.anchor_node_index, previous_position);
                 }
 
                 CheckResult::Failure

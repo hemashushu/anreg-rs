@@ -7,27 +7,27 @@
 use crate::{
     compiler::compile_from_str,
     error::Error,
-    image::{Image, MAIN_STATESET_INDEX},
+    route::{Route, MAIN_LINE_INDEX},
     instance::{Instance, MatchRange, Thread},
     transition::CheckResult,
 };
 
 pub struct Process {
-    image: Image,
+    route: Route,
 }
 
 impl Process {
     pub fn new(pattern: &str) -> Result<Self, Error> {
-        let image = compile_from_str(pattern)?;
+        let route = compile_from_str(pattern)?;
 
         // DEBUG::
-        println!("{}", image.get_image_text());
+        println!("{}", route.get_debug_text());
 
-        Ok(Process { image })
+        Ok(Process { route })
     }
 
     pub fn new_instance<'a, 'b: 'a>(&'a self, chars: &'b [char]) -> Instance {
-        Instance::new(&self.image, chars)
+        Instance::new(&self.route, chars)
     }
 }
 
@@ -46,8 +46,8 @@ impl<'a, 'b> Instance<'a, 'b> {
         )
     }
 
-    pub fn exec_with_values(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
-        let capture_names = self.image.get_capture_group_names();
+    pub fn exec_with_groups(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
+        let capture_names = self.route.get_capture_group_names();
         let chars = self.chars;
 
         if let Some(match_ranges) = self.exec(start) {
@@ -112,11 +112,11 @@ fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
 
 fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> bool {
     // allocate the vector of 'capture positions' and 'repetition counters'
-    let number_of_captures = instance.image.get_number_of_capture_groups();
-    let number_of_counters = instance.image.get_number_of_counters();
-    let main_thread = Thread::new(start, end, MAIN_STATESET_INDEX);
+    let number_of_capture_groups = instance.route.get_number_of_capture_groups();
+    let number_of_counters = instance.route.get_number_of_counters();
+    let main_thread = Thread::new(start, end, MAIN_LINE_INDEX);
     instance.threads = vec![main_thread];
-    instance.match_ranges = vec![MatchRange::default(); number_of_captures];
+    instance.match_ranges = vec![MatchRange::default(); number_of_capture_groups];
     instance.counters = vec![0; number_of_counters];
     instance.anchors = vec![vec![]; number_of_counters];
 
@@ -125,11 +125,11 @@ fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> b
             return true;
         }
 
-        if instance.image.statesets[MAIN_STATESET_INDEX].fixed_start {
+        if instance.route.lines[MAIN_LINE_INDEX].fixed_start {
             break;
         }
 
-        // move forward and try again
+        // move one character forward and try again
         start += 1;
     }
 
@@ -137,60 +137,60 @@ fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> b
 }
 
 fn start_thread(instance: &mut Instance, position: usize) -> bool {
-    let (stateset_index, entry_state_index, exit_state_index) = {
+    let (line_index, entry_node_index, exit_node_index) = {
         let thread = instance.get_current_thread_ref();
-        let stateset_index = thread.stateset_index;
-        let stateset = &instance.image.statesets[stateset_index];
+        let line_index = thread.line_index;
+        let line = &instance.route.lines[line_index];
         (
-            stateset_index,
-            stateset.start_node_index,
-            stateset.end_node_index,
+            line_index,
+            line.start_node_index,
+            line.end_node_index,
         )
     };
 
     // DEBUG::
     println!(
-        "🔶 THREAD START, state set: {}, entry state: {}, position: {}",
-        stateset_index, entry_state_index, position
+        "🔶 THREAD START, line: {}, entry node: {}, position: {}",
+        line_index, entry_node_index, position
     );
 
-    // add transitions of the entry state
-    instance.append_tasks_by_state(entry_state_index, position);
+    // add transitions of the entry node
+    instance.append_tasks_by_node(entry_node_index, position);
 
     while !instance.get_current_thread_ref_mut().stack.is_empty() {
         // take the last task
         let task = instance.get_current_thread_ref_mut().stack.pop().unwrap();
 
         // get the transition
-        let stateset = &instance.image.statesets[stateset_index];
-        let state = &stateset.states[task.state_index];
-        let transition_node = &state.transitions[task.transition_index];
+        let line = &instance.route.lines[line_index];
+        let node = &line.nodes[task.node_index];
+        let transition_item = &node.transition_items[task.transition_index];
 
         // DEBUG::
-        println!("> state: {}, position: {}", task.state_index, task.position);
+        println!("> node: {}, position: {}", task.node_index, task.position);
 
         let position = task.position;
-        let transition = &transition_node.transition;
-        let target_state_index = transition_node.target_state_index;
+        let transition = &transition_item.transition;
+        let target_node_index = transition_item.target_node_index;
 
         let check_result = transition.check(instance, position);
         match check_result {
             CheckResult::Success(forward) => {
                 // DEBUG::
                 println!(
-                    "  trans: {}, forward: {}, -> state: {}",
-                    transition, forward, target_state_index
+                    "  trans: {}, forward: {}, -> node: {}",
+                    transition, forward, target_node_index
                 );
 
-                if target_state_index == exit_state_index {
+                if target_node_index == exit_node_index {
                     println!(
-                        "  THREAD FINISH, state set: {}, state: {}",
-                        stateset_index, exit_state_index
+                        "  THREAD FINISH, line: {}, node: {}",
+                        line_index, exit_node_index
                     );
                     return true;
                 }
 
-                instance.append_tasks_by_state(target_state_index, position + forward);
+                instance.append_tasks_by_node(target_node_index, position + forward);
             }
             CheckResult::Failure => {
                 // DEBUG::
@@ -200,7 +200,7 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
     }
 
     // DEBUG::
-    println!("  THREAD FAILED, state set: {}", stateset_index);
+    println!("  THREAD FAILED, line: {}", line_index);
     false
 }
 

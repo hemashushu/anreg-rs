@@ -15,7 +15,7 @@ pub fn match_one(pattern: &str, text: &str) -> Result<Option<Vec<MatchGroup>>, E
     let chars_ref = &chars;
     let mut instance = processor.new_instance(chars_ref);
 
-    Ok(instance.exec_with_values(0))
+    Ok(instance.exec_with_groups(0))
 }
 
 pub fn match_all(pattern: &str, text: &str) -> Result<Vec<Vec<MatchGroup>>, Error> {
@@ -25,7 +25,7 @@ pub fn match_all(pattern: &str, text: &str) -> Result<Vec<Vec<MatchGroup>>, Erro
     let mut start: usize = 0;
 
     let mut results = vec![];
-    while let Some(result) = instance.exec_with_values(start) {
+    while let Some(result) = instance.exec_with_groups(start) {
         // set up the next position
         start = result[0].end;
         results.push(result);
