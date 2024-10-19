@@ -142,7 +142,7 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
 
     // DEBUG::
     println!(
-        "🔶 THREAD START, line: {}, entry node: {}, position: {}",
+        ">>THREAD START, line: {}, entry node: {}, position: {}",
         line_index, entry_node_index, position
     );
 
@@ -151,7 +151,6 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
 
     // take the last task
     while let Some(task) = instance.get_current_thread_ref_mut().stack.pop() {
-
         // get the transition
         let line = &instance.route.lines[line_index];
         let node = &line.nodes[task.node_index];
@@ -295,11 +294,190 @@ mod tests {
     fn test_preset_charset() {
         {
             let process = Process::new("char_word").unwrap();
-            let chars = "a*1**_***".chars().collect::<Vec<char>>();
+            let chars = "a*1**_ **".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
             let mut instance = process.new_instance(&chars);
             assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
             assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
             assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("char_not_word").unwrap();
+            let chars = "!a@12 bc_".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("char_digit").unwrap();
+            let chars = "1a2b_3de*".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("char_not_digit").unwrap();
+            let chars = "a1_23 456".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("char_space").unwrap();
+            let chars = " 1\tab\n_*!".chars().collect::<Vec<char>>();
+            //                      ^ ^^  ^^
+            //                      012 345 678
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("char_not_space").unwrap();
+            let chars = "a\t1\n *   ".chars().collect::<Vec<char>>();
+            //                      v  v   v
+            //                      01 23 45678
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+    }
+
+    #[test]
+    fn test_charset() {
+        {
+            let process = Process::new("['a','b','c']").unwrap();
+            let chars = "adbefcghi".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // negative
+        {
+            let process = Process::new("!['a','b','c']").unwrap();
+            let chars = "xa1bb*ccc".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("['a'..'c']").unwrap();
+            let chars = "adbefcghi".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // negative
+        {
+            let process = Process::new("!['a'..'c']").unwrap();
+            let chars = "xa1bb*ccc".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        {
+            let process = Process::new("['a'..'f', '0'..'9']").unwrap();
+            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // negative
+        {
+            let process = Process::new("!['a'..'f', '0'..'9']").unwrap();
+            let chars = "man12*def".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // combine with preset
+        {
+            let process = Process::new("['a'..'f', char_digit]").unwrap();
+            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // negative
+        {
+            let process = Process::new("!['a'..'f', char_digit]").unwrap();
+            let chars = "man12*def".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // nested
+        {
+            let process = Process::new("[['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
+            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
+            //                      ^ ^  ^
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
+        }
+
+        // negative
+        {
+            let process = Process::new("![['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
+            let chars = "man12*def".chars().collect::<Vec<char>>();
+            //                      v v  v
+            let mut instance = process.new_instance(&chars);
+            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(6), None);
         }
     }
 }

@@ -103,7 +103,7 @@ impl Task {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct MatchRange {
     pub start: usize, // position included
     pub end: usize,   // position excluded
@@ -112,6 +112,12 @@ pub struct MatchRange {
 impl MatchRange {
     pub fn new(start: usize, end: usize) -> Self {
         MatchRange { start, end }
+    }
+}
+
+impl Default for MatchRange {
+    fn default() -> Self {
+        Self { start: 0, end: 0 }
     }
 }
 
