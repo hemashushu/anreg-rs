@@ -18,6 +18,7 @@ mod parser;
 mod peekableiter;
 mod token;
 mod transition;
+mod utf8reader;
 
 pub mod instance;
 pub mod matcher;

@@ -9,6 +9,7 @@ use std::fmt::Display;
 use crate::{
     ast::AssertionName,
     instance::{Instance, MatchRange},
+    utf8reader::{self, read_char, read_previous_char},
 };
 
 pub enum Transition {
@@ -42,14 +43,19 @@ pub enum Transition {
 pub struct JumpTransition;
 
 pub struct CharTransition {
-    pub character: char,
+    // pub character: char,
+    pub bytes: [u8; 4],
+    pub byte_length: usize,
 }
 
+// There is only `char_any` currently
 pub struct SpecialCharTransition;
 
 pub struct StringTransition {
-    pub chars: Vec<char>,
-    pub length: usize,
+    // pub chars: Vec<char>,
+    // pub length: usize,
+    pub bytes: Vec<u8>,
+    pub byte_length: usize,
 }
 
 pub struct CharSetTransition {
@@ -57,9 +63,14 @@ pub struct CharSetTransition {
     pub negative: bool,
 }
 
+pub enum CharSetItem {
+    Char(u32),
+    Range(CharRange),
+}
+
 pub struct CharRange {
-    pub start: char,
-    pub end_included: char,
+    pub start: u32,        // char,
+    pub end_included: u32, // char,
 }
 
 pub struct BackReferenceTransition {
@@ -119,30 +130,36 @@ pub struct LookBehindAssertionTransition {
 
 impl CharTransition {
     pub fn new(character: char) -> Self {
-        CharTransition { character }
+        let mut bytes = [0u8; 4];
+        character.encode_utf8(&mut bytes);
+        let byte_length = character.len_utf8();
+        CharTransition { bytes, byte_length }
     }
 }
 
 impl StringTransition {
     pub fn new(s: &str) -> Self {
-        let chars: Vec<char> = s.chars().collect();
-        let length = chars.len();
-        StringTransition { chars, length }
+        let bytes: Vec<u8> = s.as_bytes().to_vec();
+        let byte_length = bytes.len();
+        StringTransition { bytes, byte_length }
     }
 }
 
-impl CharRange {
-    pub fn new(start: char, end_included: char) -> Self {
-        CharRange {
-            start,
-            end_included,
-        }
+impl CharSetItem {
+    pub fn new_char(character: char) -> Self {
+        // let mut bytes = [0u8; 4];
+        // character.encode_utf8(&mut bytes);
+        // let byte_length = character.len_utf8();
+        CharSetItem::Char(character as u32)
     }
-}
 
-pub enum CharSetItem {
-    Char(char),
-    Range(CharRange),
+    pub fn new_range(start: char, end_included: char) -> Self {
+        let char_range = CharRange {
+            start: start as u32,
+            end_included: end_included as u32,
+        };
+        CharSetItem::Range(char_range)
+    }
 }
 
 impl CharSetTransition {
@@ -188,11 +205,11 @@ impl CharSetTransition {
 }
 
 pub fn add_char(items: &mut Vec<CharSetItem>, c: char) {
-    items.push(CharSetItem::Char(c));
+    items.push(CharSetItem::new_char(c));
 }
 
 pub fn add_range(items: &mut Vec<CharSetItem>, start: char, end_included: char) {
-    items.push(CharSetItem::Range(CharRange::new(start, end_included)));
+    items.push(CharSetItem::new_range(start, end_included));
 }
 
 pub fn add_preset_space(items: &mut Vec<CharSetItem>) {
@@ -354,7 +371,9 @@ impl Display for JumpTransition {
 
 impl Display for CharTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Char '{}'", self.character)
+        let (codepoint, _) = utf8reader::read_char(&self.bytes, 0);
+        let c = unsafe { char::from_u32_unchecked(codepoint) };
+        write!(f, "Char '{}'", c)
     }
 }
 
@@ -372,8 +391,8 @@ impl Display for StringTransition {
          * or
          * `let s = String::from_iter(&chars)`
          */
-        let s = String::from_iter(&self.chars);
-        write!(f, "String \"{}\"", s)
+        let data = self.bytes.clone();
+        write!(f, "String \"{}\"", String::from_utf8(data).unwrap())
     }
 }
 
@@ -382,13 +401,21 @@ impl Display for CharSetTransition {
         let mut lines = vec![];
         for item in &self.items {
             let line = match item {
-                CharSetItem::Char(c) => match c {
-                    '\t' => "'\\t'".to_owned(),
-                    '\r' => "'\\r'".to_owned(),
-                    '\n' => "'\\n'".to_owned(),
-                    _ => format!("'{}'", c),
-                },
-                CharSetItem::Range(r) => format!("'{}'..'{}'", r.start, r.end_included),
+                CharSetItem::Char(codepoint) => {
+                    // let (codepoint, _) = utf8reader::read_char(bytes, 0);
+                    let c = unsafe { char::from_u32_unchecked(*codepoint) };
+                    match c {
+                        '\t' => "'\\t'".to_owned(),
+                        '\r' => "'\\r'".to_owned(),
+                        '\n' => "'\\n'".to_owned(),
+                        _ => format!("'{}'", c),
+                    }
+                }
+                CharSetItem::Range(r) => {
+                    let start = unsafe { char::from_u32_unchecked(r.start) };
+                    let end_included = unsafe { char::from_u32_unchecked(r.end_included) };
+                    format!("'{}'..'{}'", start, end_included)
+                }
             };
             lines.push(line);
         }
@@ -534,9 +561,21 @@ impl Transition {
                 if position >= thread.end_position {
                     CheckResult::Failure
                 } else {
-                    let current_char = get_char(instance, position);
-                    if transition.character == current_char {
-                        CheckResult::Success(1)
+                    let mut is_same = true;
+                    for (idx, b) in transition
+                        .bytes
+                        .iter()
+                        .take(transition.byte_length)
+                        .enumerate()
+                    {
+                        if b != &instance.bytes[position + idx] {
+                            is_same = false;
+                            break;
+                        }
+                    }
+
+                    if is_same {
+                        CheckResult::Success(transition.byte_length)
                     } else {
                         CheckResult::Failure
                     }
@@ -553,9 +592,9 @@ impl Transition {
                 if position >= thread.end_position {
                     CheckResult::Failure
                 } else {
-                    let current_char = get_char(instance, position);
-                    if current_char != '\n' && current_char != '\r' {
-                        CheckResult::Success(1)
+                    let (current_char, byte_length) = get_char(instance, position);
+                    if current_char != '\n' as u32 && current_char != '\r' as u32 {
+                        CheckResult::Success(byte_length)
                     } else {
                         CheckResult::Failure
                     }
@@ -564,19 +603,19 @@ impl Transition {
             Transition::String(transition) => {
                 let thread = instance.get_current_thread_ref();
 
-                if position + transition.length > thread.end_position {
+                if position + transition.byte_length > thread.end_position {
                     CheckResult::Failure
                 } else {
                     let mut is_same = true;
-                    for idx in 0..transition.length {
-                        if transition.chars[idx] != get_char(instance, idx + position) {
+                    for (idx, b) in transition.bytes.iter().enumerate() {
+                        if b != &instance.bytes[position + idx] {
                             is_same = false;
                             break;
                         }
                     }
 
                     if is_same {
-                        CheckResult::Success(transition.length)
+                        CheckResult::Success(transition.byte_length)
                     } else {
                         CheckResult::Failure
                     }
@@ -589,7 +628,7 @@ impl Transition {
                     return CheckResult::Failure;
                 }
 
-                let current_char = get_char(instance, position);
+                let (current_char, byte_length) = get_char(instance, position);
                 let mut found: bool = false;
 
                 for item in &transition.items {
@@ -606,7 +645,7 @@ impl Transition {
                 }
 
                 if found ^ transition.negative {
-                    CheckResult::Success(1)
+                    CheckResult::Success(byte_length)
                 } else {
                     CheckResult::Failure
                 }
@@ -615,25 +654,25 @@ impl Transition {
                 let MatchRange { start, end } =
                     &instance.match_ranges[transition.capture_group_index];
 
-                let chars = &instance.chars[*start..*end];
-                let length = end - start;
+                let bytes = &instance.bytes[*start..*end];
+                let byte_length = end - start;
 
                 let thread = instance.get_current_thread_ref();
 
-                if position + length >= thread.end_position {
+                if position + byte_length >= thread.end_position {
                     CheckResult::Failure
                 } else {
                     let mut is_same = true;
-                    // for idx in 0..length {
-                    for (idx, c) in chars.iter().enumerate() {
-                        if *c != get_char(instance, idx + position) {
+
+                    for (idx, c) in bytes.iter().enumerate() {
+                        if c != &instance.bytes[idx + position] {
                             is_same = false;
                             break;
                         }
                     }
 
                     if is_same {
-                        CheckResult::Success(length)
+                        CheckResult::Success(byte_length)
                     } else {
                         CheckResult::Failure
                     }
@@ -733,8 +772,9 @@ impl Transition {
 }
 
 #[inline]
-fn get_char(instance: &Instance, position: usize) -> char {
-    instance.chars[position]
+fn get_char(instance: &Instance, position: usize) -> (u32, usize) {
+    // instance.chars[position]
+    read_char(instance.bytes, position)
 }
 
 #[inline]
@@ -744,27 +784,32 @@ fn is_first_char(_instance: &Instance, position: usize) -> bool {
 
 #[inline]
 fn is_last_char(instance: &Instance, position: usize) -> bool {
-    position == instance.chars.len() - 1
+    let total_byte_length = instance.bytes.len();
+    let (_, last_char_byte_length) = read_previous_char(instance.bytes, total_byte_length);
+    position >= total_byte_length - last_char_byte_length
 }
 
-fn get_previous_char(instance: &Instance, position: usize) -> char {
+fn get_previous_char(instance: &Instance, position: usize) -> u32 {
     if is_first_char(instance, position) {
-        '\0'
+        0
     } else {
-        get_char(instance, position - 1)
+        let (codepoint, _) = get_char(instance, position - 1);
+        codepoint
     }
 }
 
-fn get_next_char(instance: &Instance, position: usize) -> char {
+fn get_next_char(instance: &Instance, position: usize) -> u32 {
     if is_last_char(instance, position) {
-        '\0'
+        0
     } else {
-        get_char(instance, position + 1)
+        let (_, length) = get_char(instance, position);
+        let (codepoint, _) = get_char(instance, position + length);
+        codepoint
     }
 }
 
 fn is_word_bound(instance: &Instance, position: usize) -> bool {
-    let current_char = get_char(instance, position);
+    let (current_char, _) = get_char(instance, position);
 
     if is_word_char(current_char) {
         !is_word_char(get_previous_char(instance, position))
@@ -775,12 +820,19 @@ fn is_word_bound(instance: &Instance, position: usize) -> bool {
     }
 }
 
-#[inline]
-fn is_word_char(c: char) -> bool {
-    ('a'..='z').any(|e| e == c)
-        || ('A'..='Z').any(|e| e == c)
-        || ('0'..='9').any(|e| e == c)
-        || c == '_'
+// #[inline]
+// fn is_word_char(c: char) -> bool {
+//     ('a'..='z').any(|e| e == c)
+//         || ('A'..='Z').any(|e| e == c)
+//         || ('0'..='9').any(|e| e == c)
+//         || c == '_'
+// }
+
+fn is_word_char(c: u32) -> bool {
+    (c >= 'a' as u32 && c <= 'z' as u32)
+        || (c >= 'A' as u32 && c <= 'Z' as u32)
+        || (c >= '0' as u32 && c <= '9' as u32)
+        || (c == '_' as u32)
 }
 
 pub enum CheckResult {

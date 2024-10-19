@@ -4,6 +4,8 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+use core::str;
+
 use crate::{
     compiler::compile_from_str,
     error::Error,
@@ -26,29 +28,25 @@ impl Process {
         Ok(Process { route })
     }
 
-    pub fn new_instance<'a, 'b: 'a>(&'a self, chars: &'b [char]) -> Instance {
-        Instance::new(&self.route, chars)
+    pub fn new_instance<'a, 'b: 'a>(&'a self, text: &'b str) -> Instance {
+        let bytes = text.as_bytes();
+        Instance::new(&self.route, bytes)
     }
 }
 
 impl<'a, 'b> Instance<'a, 'b> {
-    pub fn exec(&mut self, start: usize) -> Option<Vec<MatchRange>> {
+    pub fn exec(&mut self, start: usize) -> Option<&Vec<MatchRange>> {
         // do matching
-        if !start_main_thread(self, start, self.chars.len()) {
+        if !start_main_thread(self, start, self.bytes.len()) {
             return None;
         }
 
-        Some(
-            self.match_ranges
-                .iter()
-                .map(|item| item.to_owned())
-                .collect(),
-        )
+        Some(&self.match_ranges)
     }
 
-    pub fn exec_with_groups(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
+    pub fn exec_with_owned_values(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
         let capture_names = self.route.get_capture_group_names();
-        let chars = self.chars;
+        let bytes = self.bytes;
 
         if let Some(match_ranges) = self.exec(start) {
             let match_groups: Vec<MatchGroup> = match_ranges
@@ -57,8 +55,8 @@ impl<'a, 'b> Instance<'a, 'b> {
                 .map(|(range, name_opt)| MatchGroup {
                     start: range.start,
                     end: range.end,
-                    name: (*name_opt).map(|n| n.to_owned()),
-                    value: get_sub_string(chars, range.start, range.end),
+                    name: (*name_opt).map(|item| item.to_owned()),
+                    value: get_sub_string(bytes, range.start, range.end).to_owned(),
                 })
                 .collect();
 
@@ -72,9 +70,9 @@ impl<'a, 'b> Instance<'a, 'b> {
 #[derive(Debug, PartialEq, Clone)]
 pub struct MatchGroup {
     pub name: Option<String>,
-    pub value: String,
-    pub start: usize, // position included
-    pub end: usize,   // position excluded
+    pub value: String, // String,
+    pub start: usize,  // position included
+    pub end: usize,    // position excluded
 }
 
 impl MatchGroup {
@@ -95,15 +93,15 @@ pub fn get_group<'a>(groups: &'a [MatchGroup], name: &str) -> Option<&'a MatchGr
     })
 }
 
-fn get_sub_string(chars: &[char], start: usize, end: usize) -> String {
+fn get_sub_string(bytes: &[u8], start: usize, end: usize) -> &str {
     /*
      * convert Vec<char> into String:
      * `let s:String = chars.iter().collect()`
      * or
      * `let s = String::from_iter(&chars)`
      */
-    let slice = &chars[start..end];
-    String::from_iter(slice)
+    let slice = &bytes[start..end];
+    str::from_utf8(slice).unwrap()
 }
 
 fn start_main_thread(instance: &mut Instance, mut start: usize, end: usize) -> bool {
@@ -196,7 +194,7 @@ fn start_thread(instance: &mut Instance, position: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::instance::MatchRange;
+    use crate::{instance::MatchRange, process::MatchGroup};
 
     use super::Process;
     use pretty_assertions::assert_eq;
@@ -206,35 +204,33 @@ mod tests {
         let process = Process::new("'a'").unwrap();
 
         {
-            let chars: Vec<char> = "babbaa".chars().collect();
-            let mut instance = process.new_instance(&chars);
+            let mut instance = process.new_instance("babbaa");
 
             // match 1
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(1, 2)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(1, 2)]));
 
             // match 2
-            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(4, 5)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(4, 5)]));
-            assert_eq!(instance.exec(4), Some(vec![MatchRange::new(4, 5)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(4, 5)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(4, 5)]));
+            assert_eq!(instance.exec(4), Some(&vec![MatchRange::new(4, 5)]));
 
             // match 3
-            assert_eq!(instance.exec(5), Some(vec![MatchRange::new(5, 6)]));
+            assert_eq!(instance.exec(5), Some(&vec![MatchRange::new(5, 6)]));
 
             // exceed the length of chars
             assert_eq!(instance.exec(6), None);
         }
 
         {
-            let chars: Vec<char> = "abaabb".chars().collect();
-            let mut instance = process.new_instance(&chars);
+            let mut instance = process.new_instance("abaabb");
 
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
 
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(2, 3)]));
 
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(3, 4)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(3, 4)]));
 
             assert_eq!(instance.exec(4), None);
             assert_eq!(instance.exec(5), None);
@@ -244,8 +240,7 @@ mod tests {
         }
 
         {
-            let chars: Vec<char> = "xyz".chars().collect();
-            let mut instance = process.new_instance(&chars);
+            let mut instance = process.new_instance("xyz");
 
             assert_eq!(instance.exec(0), None);
             assert_eq!(instance.exec(1), None);
@@ -257,20 +252,73 @@ mod tests {
     }
 
     #[test]
+    fn test_process_char_with_owned_values() {
+        let process = Process::new("'a'").unwrap();
+        let mut instance = process.new_instance("babbaa");
+
+        assert_eq!(
+            instance.exec_with_owned_values(0).unwrap(),
+            vec![MatchGroup::new(None, "a".to_owned(), 1, 2),]
+        );
+
+        assert_eq!(
+            instance.exec_with_owned_values(2).unwrap(),
+            vec![MatchGroup::new(None, "a".to_owned(), 4, 5),]
+        );
+
+        assert_eq!(
+            instance.exec_with_owned_values(5).unwrap(),
+            vec![MatchGroup::new(None, "a".to_owned(), 5, 6),]
+        );
+    }
+
+    #[test]
+    fn test_process_char_with_utf8() {
+        let process = Process::new("'文'").unwrap();
+        let mut instance = process.new_instance("abc中文字符文字🌏xyz文");
+
+        {
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(15, 18)]));
+            assert_eq!(instance.exec(18), Some(&vec![MatchRange::new(28, 31)]));
+            assert_eq!(instance.exec(31), None);
+        }
+
+        {
+            assert_eq!(
+                instance.exec_with_owned_values(0).unwrap(),
+                vec![MatchGroup::new(None, "文".to_owned(), 6, 9),]
+            );
+
+            assert_eq!(
+                instance.exec_with_owned_values(9).unwrap(),
+                vec![MatchGroup::new(None, "文".to_owned(), 15, 18),]
+            );
+
+            assert_eq!(
+                instance.exec_with_owned_values(18).unwrap(),
+                vec![MatchGroup::new(None, "文".to_owned(), 28, 31),]
+            );
+
+            assert_eq!(instance.exec_with_owned_values(31), None);
+        }
+    }
+
+    #[test]
     fn test_process_string() {
         let process = Process::new("\"abc\"").unwrap();
 
         {
-            let chars: Vec<char> = "ababcbcabc".chars().collect();
-            let mut instance = process.new_instance(&chars);
+            let text = "ababcbcabc";
+            let mut instance = process.new_instance(text);
 
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(2, 5)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 5)]));
-            assert_eq!(instance.exec(2), Some(vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(2, 5)]));
 
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(7, 10)]));
-            assert_eq!(instance.exec(5), Some(vec![MatchRange::new(7, 10)]));
-            assert_eq!(instance.exec(7), Some(vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(5), Some(&vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(7), Some(&vec![MatchRange::new(7, 10)]));
 
             assert_eq!(instance.exec(8), None);
 
@@ -279,8 +327,8 @@ mod tests {
         }
 
         {
-            let chars: Vec<char> = "uvwxyz".chars().collect();
-            let mut instance = process.new_instance(&chars);
+            let text = "uvwxyz";
+            let mut instance = process.new_instance(text);
 
             assert_eq!(instance.exec(0), None);
             assert_eq!(instance.exec(1), None);
@@ -294,69 +342,69 @@ mod tests {
     fn test_preset_charset() {
         {
             let process = Process::new("char_word").unwrap();
-            let chars = "a*1**_ **".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "a*1**_ **";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("char_not_word").unwrap();
-            let chars = "!a@12 bc_".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "!a@12 bc_";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("char_digit").unwrap();
-            let chars = "1a2b_3de*".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "1a2b_3de*";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("char_not_digit").unwrap();
-            let chars = "a1_23 456".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "a1_23 456";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("char_space").unwrap();
-            let chars = " 1\tab\n_*!".chars().collect::<Vec<char>>();
-            //                      ^ ^^  ^^
-            //                      012 345 678
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = " 1\tab\n_*!";
+            //               "^ ^-  ^-   "
+            //                012 345 678
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("char_not_space").unwrap();
-            let chars = "a\t1\n *   ".chars().collect::<Vec<char>>();
-            //                      v  v   v
-            //                      01 23 45678
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "a\t1\r\n*   ";
+            //               "v  v    v   "
+            //                01 23 4 5678
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
     }
@@ -365,118 +413,118 @@ mod tests {
     fn test_charset() {
         {
             let process = Process::new("['a','b','c']").unwrap();
-            let chars = "adbefcghi".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "adbefcghi";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // negative
         {
             let process = Process::new("!['a','b','c']").unwrap();
-            let chars = "xa1bb*ccc".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "xa1bb*ccc";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("['a'..'c']").unwrap();
-            let chars = "adbefcghi".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "adbefcghi";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // negative
         {
             let process = Process::new("!['a'..'c']").unwrap();
-            let chars = "xa1bb*ccc".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "xa1bb*ccc";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         {
             let process = Process::new("['a'..'f', '0'..'9']").unwrap();
-            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "am1npfq*_";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // negative
         {
             let process = Process::new("!['a'..'f', '0'..'9']").unwrap();
-            let chars = "man12*def".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "man12*def";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // combine with preset
         {
             let process = Process::new("['a'..'f', char_digit]").unwrap();
-            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "am1npfq*_";
+            //               "^ ^  ^   ""
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // negative
         {
             let process = Process::new("!['a'..'f', char_digit]").unwrap();
-            let chars = "man12*def".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "man12*def";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // nested
         {
             let process = Process::new("[['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
-            let chars = "am1npfq*_".chars().collect::<Vec<char>>();
-            //                      ^ ^  ^
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "am1npfq*_";
+            //               "^ ^  ^   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
 
         // negative
         {
             let process = Process::new("![['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
-            let chars = "man12*def".chars().collect::<Vec<char>>();
-            //                      v v  v
-            let mut instance = process.new_instance(&chars);
-            assert_eq!(instance.exec(0), Some(vec![MatchRange::new(0, 1)]));
-            assert_eq!(instance.exec(1), Some(vec![MatchRange::new(2, 3)]));
-            assert_eq!(instance.exec(3), Some(vec![MatchRange::new(5, 6)]));
+            let text = "man12*def";
+            //               "v v  v   "
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(5, 6)]));
             assert_eq!(instance.exec(6), None);
         }
     }
