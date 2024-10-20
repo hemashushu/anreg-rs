@@ -9,7 +9,7 @@ use crate::process::{MatchGroup, Process};
 pub fn match_one(pattern: &str, text: &str) -> Option<Vec<MatchGroup>> {
     let processor = Process::new(pattern).unwrap();
     let mut instance = processor.new_instance(text);
-    instance.exec_with_owned_values(0)
+    instance.exec_with_values(0)
 }
 
 pub fn match_all(pattern: &str, text: &str) -> Vec<Vec<MatchGroup>> {
@@ -19,7 +19,7 @@ pub fn match_all(pattern: &str, text: &str) -> Vec<Vec<MatchGroup>> {
     let length = text.as_bytes().len();
 
     let mut results = vec![];
-    while let Some(result) = instance.exec_with_owned_values(start) {
+    while let Some(result) = instance.exec_with_values(start) {
         // set up the next position
         start = result[0].end;
         results.push(result);

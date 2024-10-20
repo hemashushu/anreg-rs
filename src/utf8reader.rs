@@ -50,7 +50,8 @@ pub fn read_char(data: &[u8], position: usize) -> (u32, usize) {
             code |= (data[position + 3] & 0b11_1111) as u32;
             4
         }
-        _ => unreachable!(),
+        1 => panic!("Invalid UTF-8 position."),
+        _ => panic!("Invalid UTF-8 data."),
     };
 
     (code, byte_length)
