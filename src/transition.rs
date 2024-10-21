@@ -9,7 +9,7 @@ use std::fmt::Display;
 use crate::{
     ast::AssertionName,
     instance::{Instance, MatchRange},
-    utf8reader::{self, read_char, read_previous_char},
+    utf8reader::{self, read_char},
 };
 
 pub enum Transition {
@@ -27,12 +27,12 @@ pub enum Transition {
 
     // reset the associated counter and the list of anchors
     CounterReset(CounterResetTransition),
+    CounterSave(CounterSaveTransition),
     CounterInc(CounterIncTransition),
     CounterCheck(CounterCheckTransition),
-
     Repetition(RepetitionTransition),
-    RepetitionWithAnchor(RepetitionWithAnchorTransition),
-    Backtrack(BacktrackingTransition),
+    // RepetitionWithAnchor(RepetitionWithAnchorTransition),
+    // Backtrack(BacktrackingTransition),
 
     // assertion
     LookAheadAssertion(LookAheadAssertionTransition),
@@ -90,32 +90,36 @@ pub struct CaptureEndTransition {
 }
 
 pub struct CounterResetTransition {
-    pub counter_index: usize,
+    // pub counter_index: usize,
+}
+
+pub struct CounterSaveTransition {
+    // pub counter_index: usize,
 }
 
 pub struct CounterIncTransition {
-    pub counter_index: usize,
+    // pub counter_index: usize,
 }
 
 pub struct CounterCheckTransition {
-    pub counter_index: usize,
+    // pub counter_index: usize,
     pub repetition_type: RepetitionType,
 }
 
 pub struct RepetitionTransition {
-    pub counter_index: usize,
+    // pub counter_index: usize,
     pub repetition_type: RepetitionType,
 }
 
-pub struct RepetitionWithAnchorTransition {
-    pub counter_index: usize,
-    pub repetition_type: RepetitionType,
-}
+// pub struct RepetitionWithAnchorTransition {
+//     pub counter_index: usize,
+//     pub repetition_type: RepetitionType,
+// }
 
-pub struct BacktrackingTransition {
-    pub counter_index: usize,
-    pub anchor_node_index: usize,
-}
+// pub struct BacktrackingTransition {
+//     pub counter_index: usize,
+//     pub anchor_node_index: usize,
+// }
 
 pub struct LookAheadAssertionTransition {
     pub line_index: usize,
@@ -273,52 +277,58 @@ pub enum RepetitionType {
 }
 
 impl CounterResetTransition {
-    pub fn new(counter_index: usize) -> Self {
-        CounterResetTransition { counter_index }
+    pub fn new(/* counter_index: usize */) -> Self {
+        CounterResetTransition {} // counter_index }
+    }
+}
+
+impl CounterSaveTransition {
+    pub fn new(/* counter_index: usize */) -> Self {
+        CounterSaveTransition {} // counter_index }
     }
 }
 
 impl CounterIncTransition {
-    pub fn new(counter_index: usize) -> Self {
-        CounterIncTransition { counter_index }
+    pub fn new(/* counter_index: usize */) -> Self {
+        CounterIncTransition {} // counter_index }
     }
 }
 
 impl CounterCheckTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+    pub fn new(/* counter_index: usize,*/ repetition_type: RepetitionType) -> Self {
         CounterCheckTransition {
-            counter_index,
+            // counter_index,
             repetition_type,
         }
     }
 }
 
 impl RepetitionTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+    pub fn new(/* counter_index: usize,*/ repetition_type: RepetitionType) -> Self {
         RepetitionTransition {
-            counter_index,
+            // counter_index,
             repetition_type,
         }
     }
 }
 
-impl RepetitionWithAnchorTransition {
-    pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
-        RepetitionWithAnchorTransition {
-            counter_index,
-            repetition_type,
-        }
-    }
-}
-
-impl BacktrackingTransition {
-    pub fn new(counter_index: usize, anchor_node_index: usize) -> Self {
-        BacktrackingTransition {
-            counter_index,
-            anchor_node_index,
-        }
-    }
-}
+// impl RepetitionWithAnchorTransition {
+//     pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
+//         RepetitionWithAnchorTransition {
+//             counter_index,
+//             repetition_type,
+//         }
+//     }
+// }
+//
+// impl BacktrackingTransition {
+//     pub fn new(counter_index: usize, anchor_node_index: usize) -> Self {
+//         BacktrackingTransition {
+//             counter_index,
+//             anchor_node_index,
+//         }
+//     }
+// }
 
 impl LookAheadAssertionTransition {
     pub fn new(line_index: usize, negative: bool) -> Self {
@@ -352,11 +362,12 @@ impl Display for Transition {
             Transition::CaptureStart(m) => write!(f, "{}", m),
             Transition::CaptureEnd(m) => write!(f, "{}", m),
             Transition::CounterReset(c) => write!(f, "{}", c),
+            Transition::CounterSave(c) => write!(f, "{}", c),
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
             Transition::Repetition(r) => write!(f, "{}", r),
-            Transition::RepetitionWithAnchor(r) => write!(f, "{}", r),
-            Transition::Backtrack(b) => write!(f, "{}", b),
+            // Transition::RepetitionWithAnchor(r) => write!(f, "{}", r),
+            // Transition::Backtrack(b) => write!(f, "{}", b),
             Transition::LookAheadAssertion(l) => write!(f, "{}", l),
             Transition::LookBehindAssertion(l) => write!(f, "{}", l),
         }
@@ -455,13 +466,21 @@ impl Display for CaptureEndTransition {
 
 impl Display for CounterResetTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Counter reset %{}", self.counter_index)
+        // write!(f, "Counter reset %{}", self.counter_index)
+        f.write_str("Counter reset")
+    }
+}
+
+impl Display for CounterSaveTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Counter save")
     }
 }
 
 impl Display for CounterIncTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Counter inc %{}", self.counter_index)
+        // write!(f, "Counter inc %{}", self.counter_index)
+        f.write_str("Counter inc")
     }
 }
 
@@ -469,8 +488,22 @@ impl Display for CounterCheckTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Counter check %{}, {}",
-            self.counter_index, self.repetition_type
+            // "Counter check %{}, {}",
+            "Counter check {}",
+            // self.counter_index,
+            self.repetition_type
+        )
+    }
+}
+
+impl Display for RepetitionTransition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            // "Repetition %{}, {}",
+            "Repetition {}",
+            // self.counter_index,
+            self.repetition_type
         )
     }
 }
@@ -481,44 +514,34 @@ impl Display for RepetitionType {
             RepetitionType::Specified(n) => write!(f, "times {}", n),
             RepetitionType::Range(m, n) => {
                 if n == &usize::MAX {
-                    write!(f, "from {}, to MAX", m)
+                    write!(f, "from {} to MAX", m)
                 } else {
-                    write!(f, "from {}, to {}", m, n)
+                    write!(f, "from {} to {}", m, n)
                 }
             }
         }
     }
 }
 
-impl Display for RepetitionTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Repetition %{}, {}",
-            self.counter_index, self.repetition_type
-        )
-    }
-}
-
-impl Display for RepetitionWithAnchorTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Repetition with anchor %{}, {}",
-            self.counter_index, self.repetition_type
-        )
-    }
-}
-
-impl Display for BacktrackingTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Backtrack %{} -> {}",
-            self.counter_index, self.anchor_node_index
-        )
-    }
-}
+// impl Display for RepetitionWithAnchorTransition {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "Repetition with anchor %{}, {}",
+//             self.counter_index, self.repetition_type
+//         )
+//     }
+// }
+//
+// impl Display for BacktrackingTransition {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "Backtrack %{} -> {}",
+//             self.counter_index, self.anchor_node_index
+//         )
+//     }
+// }
 
 impl Display for LookAheadAssertionTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -549,11 +572,16 @@ impl Display for LookBehindAssertionTransition {
 }
 
 impl Transition {
-    pub fn check(&self, instance: &mut Instance, position: usize) -> CheckResult {
+    pub fn check(
+        &self,
+        instance: &mut Instance,
+        position: usize,
+        repetition_count: usize,
+    ) -> CheckResult {
         match self {
             Transition::Jump(_) => {
                 // always success
-                CheckResult::Success(0)
+                CheckResult::Success(0, 0)
             }
             Transition::Char(transition) => {
                 let thread = instance.get_current_thread_ref();
@@ -575,13 +603,13 @@ impl Transition {
                     }
 
                     if is_same {
-                        CheckResult::Success(transition.byte_length)
+                        CheckResult::Success(transition.byte_length, 0)
                     } else {
                         CheckResult::Failure
                     }
                 }
             }
-            Transition::SpecialChar(_transition) => {
+            Transition::SpecialChar(_) => {
                 // 'special char' currently contains only the 'char_any'.
                 //
                 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes
@@ -594,7 +622,7 @@ impl Transition {
                 } else {
                     let (current_char, byte_length) = get_char(instance, position);
                     if current_char != '\n' as u32 && current_char != '\r' as u32 {
-                        CheckResult::Success(byte_length)
+                        CheckResult::Success(byte_length, 0)
                     } else {
                         CheckResult::Failure
                     }
@@ -615,7 +643,7 @@ impl Transition {
                     }
 
                     if is_same {
-                        CheckResult::Success(transition.byte_length)
+                        CheckResult::Success(transition.byte_length, 0)
                     } else {
                         CheckResult::Failure
                     }
@@ -645,7 +673,7 @@ impl Transition {
                 }
 
                 if found ^ transition.negative {
-                    CheckResult::Success(byte_length)
+                    CheckResult::Success(byte_length, 0)
                 } else {
                     CheckResult::Failure
                 }
@@ -672,7 +700,7 @@ impl Transition {
                     }
 
                     if is_same {
-                        CheckResult::Success(byte_length)
+                        CheckResult::Success(byte_length, 0)
                     } else {
                         CheckResult::Failure
                     }
@@ -687,87 +715,96 @@ impl Transition {
                 };
 
                 if success {
-                    CheckResult::Success(0)
+                    CheckResult::Success(0, 0)
                 } else {
                     CheckResult::Failure
                 }
             }
             Transition::CaptureStart(transition) => {
                 instance.match_ranges[transition.capture_group_index].start = position;
-                CheckResult::Success(0)
+                CheckResult::Success(0, 0)
             }
             Transition::CaptureEnd(transition) => {
                 instance.match_ranges[transition.capture_group_index].end = position;
-                CheckResult::Success(0)
+                CheckResult::Success(0, 0)
             }
-            Transition::CounterReset(transition) => {
+            Transition::CounterReset(_) => {
                 // reset counter
-                instance.counters[transition.counter_index] = 0;
+                // instance.counters[transition.counter_index] = 0;
 
-                // reset anchors also
-                instance.anchors[transition.counter_index] = vec![];
+                // // reset anchors also
+                // instance.anchors[transition.counter_index] = vec![];
 
-                CheckResult::Success(0)
+                CheckResult::Success(0, 0)
             }
-            Transition::CounterInc(transition) => {
-                instance.counters[transition.counter_index] += 1;
-                CheckResult::Success(0)
+            Transition::CounterSave(_) => {
+                instance.counter_stack.push(repetition_count);
+                CheckResult::Success(0, 0)
+            }
+            Transition::CounterInc(_) => {
+                //instance.counters[transition.counter_index] += 1;
+                let last_count = instance.counter_stack.pop().unwrap();
+                CheckResult::Success(0, last_count + 1)
             }
             Transition::CounterCheck(transition) => {
-                let count = instance.counters[transition.counter_index];
+                // let count = instance.counters[transition.counter_index];
+
                 let can_forward = match transition.repetition_type {
-                    RepetitionType::Specified(m) => count == m,
-                    RepetitionType::Range(from, to) => count >= from && count <= to,
+                    RepetitionType::Specified(m) => repetition_count == m,
+                    RepetitionType::Range(from, to) => {
+                        repetition_count >= from && repetition_count <= to
+                    }
                 };
                 if can_forward {
-                    CheckResult::Success(0)
+                    CheckResult::Success(0, repetition_count)
                 } else {
                     CheckResult::Failure
                 }
             }
             Transition::Repetition(transition) => {
-                let count = instance.counters[transition.counter_index];
+                // let count = instance.counters[transition.counter_index];
+
                 let can_backward = match transition.repetition_type {
-                    RepetitionType::Specified(times) => count < times,
-                    RepetitionType::Range(_, to) => count < to,
+                    RepetitionType::Specified(times) => repetition_count < times,
+                    RepetitionType::Range(_, to) => repetition_count < to,
                 };
                 if can_backward {
-                    CheckResult::Success(0)
+                    CheckResult::Success(0, repetition_count)
                 } else {
                     CheckResult::Failure
                 }
             }
-            Transition::RepetitionWithAnchor(transition) => {
-                let count = instance.counters[transition.counter_index];
-                let (should_anchor, can_backward) = match transition.repetition_type {
-                    RepetitionType::Specified(times) => (false, count < times),
-                    RepetitionType::Range(from, to) => (count > from, count < to),
-                };
-
-                if can_backward {
-                    if should_anchor {
-                        instance.anchors[transition.counter_index].push(position);
-                    }
-                    CheckResult::Success(0)
-                } else {
-                    CheckResult::Failure
-                }
-            }
-            Transition::Backtrack(transition) => {
-                // move the position back by anchor
-                // note:
-                // actually the last one of anchors is redundant,
-                // because the position has already been tried and failed.
-                let previous_position_opt = instance.anchors[transition.counter_index].pop();
-
-                if let Some(previous_position) = previous_position_opt {
-                    // build a stackframe for the target state node
-                    instance.append_tasks_by_node(transition.anchor_node_index, previous_position);
-                }
-
-                // always return `failure`
-                CheckResult::Failure
-            }
+            //             Transition::RepetitionWithAnchor(transition) => {
+            //                 let count = instance.counters[transition.counter_index];
+            //                 let (should_anchor, can_backward) = match transition.repetition_type {
+            //                     RepetitionType::Specified(times) => (false, count < times),
+            //                     RepetitionType::Range(from, to) => (count > from, count < to),
+            //                 };
+            //
+            //                 if can_backward {
+            //                     if should_anchor {
+            //                         instance.anchors[transition.counter_index].push(position);
+            //                     }
+            //                     CheckResult::Success(0)
+            //                 } else {
+            //                     CheckResult::Failure
+            //                 }
+            //             }
+            //             Transition::Backtrack(transition) => {
+            //                 // move the position back by anchor
+            //                 // note:
+            //                 // actually the last one of anchors is redundant,
+            //                 // because the position has already been tried and failed.
+            //                 let previous_position_opt = instance.anchors[transition.counter_index].pop();
+            //
+            //                 if let Some(previous_position) = previous_position_opt {
+            //                     // build a stackframe for the target state node
+            //                     instance.append_tasks_by_node(transition.anchor_node_index, previous_position);
+            //                 }
+            //
+            //                 // always return `failure`
+            //                 CheckResult::Failure
+            //             }
             Transition::LookAheadAssertion(_transition) => todo!(),
             Transition::LookBehindAssertion(_transition) => todo!(),
         }
@@ -817,7 +854,7 @@ fn is_end(instance: &Instance, position: usize) -> bool {
 // }
 
 fn is_word_bound(instance: &Instance, position: usize) -> bool {
-    if instance.bytes.len() == 0 {
+    if instance.bytes.is_empty() {
         false
     } else if position == 0 {
         let (current_char, _) = get_char(instance, position);
@@ -845,6 +882,9 @@ fn is_word_char(c: u32) -> bool {
 }
 
 pub enum CheckResult {
-    Success(/* position forward */ usize),
+    Success(
+        /* position forward */ usize,
+        /* repetition count */ usize,
+    ),
     Failure,
 }

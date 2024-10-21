@@ -13,12 +13,7 @@ use crate::{
     parser::parse_from_str,
     route::{Line, Route},
     transition::{
-        add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
-        AssertionTransition, BackReferenceTransition, BacktrackingTransition, CaptureEndTransition,
-        CaptureStartTransition, CharSetItem, CharSetTransition, CharTransition,
-        CounterCheckTransition, CounterIncTransition, CounterResetTransition, JumpTransition,
-        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionWithAnchorTransition,
-        RepetitionTransition, RepetitionType, SpecialCharTransition, StringTransition, Transition,
+        add_char, add_preset_digit, add_preset_space, add_preset_word, add_range, AssertionTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition, CharSetItem, CharSetTransition, CharTransition, CounterCheckTransition, CounterIncTransition, CounterResetTransition, CounterSaveTransition, JumpTransition, LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionTransition, RepetitionType, SpecialCharTransition, StringTransition, Transition
     },
 };
 
@@ -675,42 +670,46 @@ impl<'a> Compiler<'a> {
         is_lazy: bool,
     ) -> Result<Port, Error> {
         // lazy repetition
-        //                                         counter
-        //                             box       | inc
-        //   in        left  jump  /-----------\ v trans  right     out
-        //  ==o==------==o==------==o in  out o==-------==o|o==---==o==
-        //       ^ cnter ^         \-----------/           |o-\  ^ counter
-        //       | reset |                                    |  | check
-        //         trans \------------------------------------/    trans
+        //
+        //                     counter               counter
+        //                   | save                | restore & inc
+        //                   | trans               | trans
+        //   in        left  v       /-----------\ v        right     out
+        //  ==o==------==o==--------==o in  out o==-------==o|o==---==o==
+        //       ^ cnter ^           \-----------/           |o-\  ^ counter
+        //       | reset |                                      |  | check
+        //         trans \--------------------------------------/    trans
         //                         repetition trans
         //
         // greedy repetion
-        //                     repetition anchor trans
-        //               /------------------------------------\
-        //               |                         counter    |
-        //               |             box       | inc        |
-        //   in          v   jump  /-----------\ v trans      |
-        //  ==o==------==o==------==o in  out o==-------==o|o=/   anchor     branch   out
-        //       ^ cnter left      \-----------/     right |o==---==o==----==o|o==--==o==
-        //       | reset                                        ^   ^         |o=\
-        //         trans                          counter check |   |            |
-        //                                                trans     \------------/
-        //                                                          backtrack trans
         //
         //                         repetition trans
-        //               /------------------------------------\
-        //               |                         counter    |
-        //               |             box       | inc        |
-        //   in          v   jump  /-----------\ v trans      |
-        //  ==o==------==o==------==o in  out o==-------==o|o=/     out
-        //       ^ cnter left      \-----------/     right |o==---==o==
+        //               /--------------------------------------\
+        //               |     counter               counter    |
+        //               |   | save                | restore &  |
+        //               |   | trans               | inc        |
+        //   in          v   v       /-----------\ v trans      |
+        //  ==o==------==o==--------==o in  out o==-------==o|o=/     out
+        //       ^ cnter left        \-----------/     right |o==---==o==
         //       | reset                                        ^
         //         trans                          counter check |
         //                                                trans
+//                            // repetition anchor trans
+//                    //   /------------------------------------\
+//                    //   |                         counter    |
+//                    //   |             box       | inc        |
+//        //   in          v   jump  /-----------\ v trans      |
+//        //  ==o==------==o==------==o in  out o==-------==o|o=/   anchor     branch   out
+//            //   ^ cnter left      \-----------/     right |o==---==o==----==o|o==--==o==
+//            //   | reset                                        ^   ^         |o=\
+//                // trans                          counter check |   |            |
+//                                                    //    trans     \------------/
+//                                                                //  backtrack trans
+
 
 
         let port = self.emit_expression(expression)?;
-        let counter_index = self.route.new_counter();
+        // let counter_index = self.route.new_counter();
         let line = self.get_current_line_ref_mut();
         let in_node_index = line.new_node();
         let left_node_index = line.new_node();
@@ -719,19 +718,19 @@ impl<'a> Compiler<'a> {
         line.append_transition(
             in_node_index,
             left_node_index,
-            Transition::CounterReset(CounterResetTransition::new(counter_index)),
+            Transition::CounterReset(CounterResetTransition::new()), // counter_index)),
         );
 
         line.append_transition(
             left_node_index,
             port.in_node_index,
-            Transition::Jump(JumpTransition),
+            Transition::CounterSave(CounterSaveTransition::new()),
         );
 
         line.append_transition(
             port.out_node_index,
             right_node_index,
-            Transition::CounterInc(CounterIncTransition::new(counter_index)),
+            Transition::CounterInc(CounterIncTransition::new()), // counter_index)),
         );
 
         let out_node_index = line.new_node();
@@ -743,7 +742,7 @@ impl<'a> Compiler<'a> {
                 right_node_index,
                 out_node_index,
                 Transition::CounterCheck(CounterCheckTransition::new(
-                    counter_index,
+                    // counter_index,
                     repetition_type.clone(),
                 )),
             );
@@ -751,7 +750,9 @@ impl<'a> Compiler<'a> {
             line.append_transition(
                 right_node_index,
                 left_node_index,
-                Transition::Repetition(RepetitionTransition::new(counter_index, repetition_type)),
+                Transition::Repetition(RepetitionTransition::new(
+                    // counter_index,
+                    repetition_type)),
             );
 
             // Ok(Port::new(in_node_index, out_node_index))
@@ -759,14 +760,16 @@ impl<'a> Compiler<'a> {
             line.append_transition(
                 right_node_index,
                 left_node_index,
-                Transition::Repetition(RepetitionTransition::new(counter_index, repetition_type.clone())),
+                Transition::Repetition(RepetitionTransition::new(
+                    //counter_index,
+                    repetition_type.clone())),
             );
 
             line.append_transition(
                 right_node_index,
                 out_node_index,
                 Transition::CounterCheck(CounterCheckTransition::new(
-                    counter_index,
+                    // counter_index,
                     repetition_type,
                 )),
             );
@@ -1885,7 +1888,490 @@ define(letter, ['a'..'f', char_space])
     }
 
     #[test]
-    fn test_compile_notations() {
+    fn test_compile_repatition_specified() {
+        // repeat >1
+        {
+            let route = compile_from_str(r#"'a'{2}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s, "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 5, Counter check times 2
+  -> 3, Repetition times 2
+- 5
+  -> 7, Capture end {0}
+> 6
+  -> 2, Capture start {0}
+< 7
+# {0}"
+
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, times 2
+//   -> 3, Repetition %0, times 2
+// - 5
+//   -> 7, Capture end {0}
+// > 6
+//   -> 2, Capture start {0}
+// < 7
+// # {0}"
+            );
+        }
+
+        // repeat 1
+        {
+            let route = compile_from_str(r#"'a'{1}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 3, Capture end {0}
+> 2
+  -> 0, Capture start {0}
+< 3
+# {0}"
+            );
+        }
+
+        // repeat 0
+        {
+            let route = compile_from_str(r#"'a'{0}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Jump
+- 1
+  -> 3, Capture end {0}
+> 2
+  -> 0, Capture start {0}
+< 3
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_repatition_range() {
+        // greedy
+        {
+            let route = compile_from_str(r#"'a'{3,5}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s, "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 3, Repetition from 3 to 5
+  -> 5, Counter check from 3 to 5
+- 5
+  -> 7, Capture end {0}
+> 6
+  -> 2, Capture start {0}
+< 7
+# {0}"
+
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 3, Repetition with anchor %0, from 3, to 5
+//   -> 5, Counter check %0, from 3, to 5
+// - 5
+//   -> 6, Jump
+// - 6
+//   -> 7, Jump
+//   -> 5, Backtrack %0 -> 5
+// - 7
+//   -> 9, Capture end {0}
+// > 8
+//   -> 2, Capture start {0}
+// < 9
+// # {0}"
+            );
+        }
+
+        // lazy
+        {
+            let route = compile_from_str(r#"'a'{3,5}?"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 5, Counter check from 3 to 5
+  -> 3, Repetition from 3 to 5
+- 5
+  -> 7, Capture end {0}
+> 6
+  -> 2, Capture start {0}
+< 7
+# {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, from 3, to 5
+//   -> 3, Repetition %0, from 3, to 5
+// - 5
+//   -> 7, Capture end {0}
+// > 6
+//   -> 2, Capture start {0}
+// < 7
+// # {0}"
+            );
+        }
+
+        // {m, m}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{3,3}"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'{3}"#).unwrap().get_debug_text()
+            )
+        }
+
+        // {1, 1}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,1}"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'"#).unwrap().get_debug_text()
+            )
+        }
+
+        // {0, m}
+        {
+            let route = compile_from_str(r#"'a'{0,5}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s,"\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 3, Repetition from 1 to 5
+  -> 5, Counter check from 1 to 5
+- 5
+  -> 7, Jump
+- 6
+  -> 2, Jump
+  -> 7, Jump
+- 7
+  -> 9, Capture end {0}
+> 8
+  -> 6, Capture start {0}
+< 9
+# {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 3, Repetition with anchor %0, from 1, to 5
+//   -> 5, Counter check %0, from 1, to 5
+// - 5
+//   -> 6, Jump
+// - 6
+//   -> 7, Jump
+//   -> 5, Backtrack %0 -> 5
+// - 7
+//   -> 9, Jump
+// - 8
+//   -> 2, Jump
+//   -> 9, Jump
+// - 9
+//   -> 11, Capture end {0}
+// > 10
+//   -> 8, Capture start {0}
+// < 11
+// # {0}"
+            );
+        }
+
+        // {0, m} lazy
+        {
+            let route = compile_from_str(r#"'a'{0,5}?"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s, "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 5, Counter check from 1 to 5
+  -> 3, Repetition from 1 to 5
+- 5
+  -> 7, Jump
+- 6
+  -> 7, Jump
+  -> 2, Jump
+- 7
+  -> 9, Capture end {0}
+> 8
+  -> 6, Capture start {0}
+< 9
+# {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, from 1, to 5
+//   -> 3, Repetition %0, from 1, to 5
+// - 5
+//   -> 7, Jump
+// - 6
+//   -> 7, Jump
+//   -> 2, Jump
+// - 7
+//   -> 9, Capture end {0}
+// > 8
+//   -> 6, Capture start {0}
+// < 9
+// # {0}"
+            );
+        }
+
+        // {0, 1}
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,1}"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'?"#).unwrap().get_debug_text()
+            )
+        }
+
+        // {0, 1} lazy
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,1}?"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'??"#).unwrap().get_debug_text()
+            )
+        }
+
+        // {0, 0}
+        {
+            let route = compile_from_str(r#"'a'{0,0}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s,
+                "\
+- 0
+  -> 1, Jump
+- 1
+  -> 3, Capture end {0}
+> 2
+  -> 0, Capture start {0}
+< 3
+# {0}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_repatition_at_least() {
+        // {m,}
+        {
+            let route = compile_from_str(r#"'a'{3,}"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s, "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 3, Repetition from 3 to MAX
+  -> 5, Counter check from 3 to MAX
+- 5
+  -> 7, Capture end {0}
+> 6
+  -> 2, Capture start {0}
+< 7
+# {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 3, Repetition with anchor %0, from 3, to MAX
+//   -> 5, Counter check %0, from 3, to MAX
+// - 5
+//   -> 6, Jump
+// - 6
+//   -> 7, Jump
+//   -> 5, Backtrack %0 -> 5
+// - 7
+//   -> 9, Capture end {0}
+// > 8
+//   -> 2, Capture start {0}
+// < 9
+// # {0}"
+            );
+        }
+
+        // lazy
+        {
+            let route = compile_from_str(r#"'a'{3,}?"#).unwrap();
+            let s = route.get_debug_text();
+
+            assert_str_eq!(
+                s, "\
+- 0
+  -> 1, Char 'a'
+- 1
+  -> 4, Counter inc
+- 2
+  -> 3, Counter reset
+- 3
+  -> 0, Counter save
+- 4
+  -> 5, Counter check from 3 to MAX
+  -> 3, Repetition from 3 to MAX
+- 5
+  -> 7, Capture end {0}
+> 6
+  -> 2, Capture start {0}
+< 7
+# {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, from 3, to MAX
+//   -> 3, Repetition %0, from 3, to MAX
+// - 5
+//   -> 7, Capture end {0}
+// > 6
+//   -> 2, Capture start {0}
+// < 7
+// # {0}"
+            );
+        }
+
+        // {1,} == one_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,}"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'+"#).unwrap().get_debug_text()
+            );
+        }
+
+        // {1,}? == lazy one_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{1,}?"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'+?"#).unwrap().get_debug_text()
+            );
+        }
+
+        // {0,} == zero_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,}"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'*"#).unwrap().get_debug_text()
+            );
+        }
+
+        // {0,}? == lazy zero_or_more
+        {
+            assert_str_eq!(
+                compile_from_str(r#"'a'{0,}?"#).unwrap().get_debug_text(),
+                compile_from_str(r#"'a'*?"#).unwrap().get_debug_text()
+            );
+        }
+    }
+
+    #[test]
+    fn test_compile_notation_optional() {
         // optional
         {
             let route = compile_from_str(r#"'a'?"#).unwrap();
@@ -1933,6 +2419,10 @@ define(letter, ['a'..'f', char_space])
 # {0}"
             );
         }
+    }
+
+    #[test]
+    fn test_compile_natation_repetition() {
 
         // one or more
         {
@@ -1940,30 +2430,47 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,
-                "\
+                s,"\
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc %0
+  -> 4, Counter inc
 - 2
-  -> 3, Counter reset %0
+  -> 3, Counter reset
 - 3
-  -> 0, Jump
+  -> 0, Counter save
 - 4
-  -> 3, Repetition with anchor %0, from 1, to MAX
-  -> 5, Counter check %0, from 1, to MAX
+  -> 3, Repetition from 1 to MAX
+  -> 5, Counter check from 1 to MAX
 - 5
-  -> 6, Jump
-- 6
-  -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 9, Capture end {0}
-> 8
+  -> 7, Capture end {0}
+> 6
   -> 2, Capture start {0}
-< 9
+< 7
 # {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 3, Repetition with anchor %0, from 1, to MAX
+//   -> 5, Counter check %0, from 1, to MAX
+// - 5
+//   -> 6, Jump
+// - 6
+//   -> 7, Jump
+//   -> 5, Backtrack %0 -> 5
+// - 7
+//   -> 9, Capture end {0}
+// > 8
+//   -> 2, Capture start {0}
+// < 9
+// # {0}"
             );
         }
 
@@ -1973,25 +2480,42 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,
-                "\
+                s,"\
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc %0
+  -> 4, Counter inc
 - 2
-  -> 3, Counter reset %0
+  -> 3, Counter reset
 - 3
-  -> 0, Jump
+  -> 0, Counter save
 - 4
-  -> 5, Counter check %0, from 1, to MAX
-  -> 3, Repetition %0, from 1, to MAX
+  -> 5, Counter check from 1 to MAX
+  -> 3, Repetition from 1 to MAX
 - 5
   -> 7, Capture end {0}
 > 6
   -> 2, Capture start {0}
 < 7
 # {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, from 1, to MAX
+//   -> 3, Repetition %0, from 1, to MAX
+// - 5
+//   -> 7, Capture end {0}
+// > 6
+//   -> 2, Capture start {0}
+// < 7
+// # {0}"
             );
         }
 
@@ -2001,35 +2525,57 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,
-                "\
+                s, "\
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc %0
+  -> 4, Counter inc
 - 2
-  -> 3, Counter reset %0
+  -> 3, Counter reset
 - 3
-  -> 0, Jump
+  -> 0, Counter save
 - 4
-  -> 3, Repetition with anchor %0, from 1, to MAX
-  -> 5, Counter check %0, from 1, to MAX
+  -> 3, Repetition from 1 to MAX
+  -> 5, Counter check from 1 to MAX
 - 5
-  -> 6, Jump
-- 6
   -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 9, Jump
-- 8
+- 6
   -> 2, Jump
-  -> 9, Jump
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 8, Capture start {0}
-< 11
+  -> 7, Jump
+- 7
+  -> 9, Capture end {0}
+> 8
+  -> 6, Capture start {0}
+< 9
 # {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 3, Repetition with anchor %0, from 1, to MAX
+//   -> 5, Counter check %0, from 1, to MAX
+// - 5
+//   -> 6, Jump
+// - 6
+//   -> 7, Jump
+//   -> 5, Backtrack %0 -> 5
+// - 7
+//   -> 9, Jump
+// - 8
+//   -> 2, Jump
+//   -> 9, Jump
+// - 9
+//   -> 11, Capture end {0}
+// > 10
+//   -> 8, Capture start {0}
+// < 11
+// # {0}"
             );
         }
 
@@ -2039,19 +2585,18 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,
-                "\
+                s, "\
 - 0
   -> 1, Char 'a'
 - 1
-  -> 4, Counter inc %0
+  -> 4, Counter inc
 - 2
-  -> 3, Counter reset %0
+  -> 3, Counter reset
 - 3
-  -> 0, Jump
+  -> 0, Counter save
 - 4
-  -> 5, Counter check %0, from 1, to MAX
-  -> 3, Repetition %0, from 1, to MAX
+  -> 5, Counter check from 1 to MAX
+  -> 3, Repetition from 1 to MAX
 - 5
   -> 7, Jump
 - 6
@@ -2063,405 +2608,32 @@ define(letter, ['a'..'f', char_space])
   -> 6, Capture start {0}
 < 9
 # {0}"
+// "\
+// - 0
+//   -> 1, Char 'a'
+// - 1
+//   -> 4, Counter inc %0
+// - 2
+//   -> 3, Counter reset %0
+// - 3
+//   -> 0, Jump
+// - 4
+//   -> 5, Counter check %0, from 1, to MAX
+//   -> 3, Repetition %0, from 1, to MAX
+// - 5
+//   -> 7, Jump
+// - 6
+//   -> 7, Jump
+//   -> 2, Jump
+// - 7
+//   -> 9, Capture end {0}
+// > 8
+//   -> 6, Capture start {0}
+// < 9
+// # {0}"
             );
         }
 
-        // multiple
-        {
-            let route = compile_from_str(r#"'a'+,'b'+?"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 3, Repetition with anchor %0, from 1, to MAX
-  -> 5, Counter check %0, from 1, to MAX
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 10, Jump
-- 8
-  -> 9, Char 'b'
-- 9
-  -> 12, Counter inc %1
-- 10
-  -> 11, Counter reset %1
-- 11
-  -> 8, Jump
-- 12
-  -> 13, Counter check %1, from 1, to MAX
-  -> 11, Repetition %1, from 1, to MAX
-- 13
-  -> 15, Capture end {0}
-> 14
-  -> 2, Capture start {0}
-< 15
-# {0}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_compile_repeat_specified() {
-        // repeat >1
-        {
-            let route = compile_from_str(r#"'a'{2}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 5, Counter check %0, times 2
-  -> 3, Repetition %0, times 2
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
-            );
-        }
-
-        // repeat 1
-        {
-            let route = compile_from_str(r#"'a'{1}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
-            );
-        }
-
-        // repeat 0
-        {
-            let route = compile_from_str(r#"'a'{0}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Jump
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_compile_repeat_range() {
-        // greedy
-        {
-            let route = compile_from_str(r#"'a'{3,5}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 3, Repetition with anchor %0, from 3, to 5
-  -> 5, Counter check %0, from 3, to 5
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 2, Capture start {0}
-< 9
-# {0}"
-            );
-        }
-
-        // lazy
-        {
-            let route = compile_from_str(r#"'a'{3,5}?"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 5, Counter check %0, from 3, to 5
-  -> 3, Repetition %0, from 3, to 5
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
-            );
-        }
-
-        // {m, m}
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{3,3}"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'{3}"#).unwrap().get_debug_text()
-            )
-        }
-
-        // {1, 1}
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{1,1}"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'"#).unwrap().get_debug_text()
-            )
-        }
-
-        // {0, m}
-        {
-            let route = compile_from_str(r#"'a'{0,5}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 3, Repetition with anchor %0, from 1, to 5
-  -> 5, Counter check %0, from 1, to 5
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 9, Jump
-- 8
-  -> 2, Jump
-  -> 9, Jump
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 8, Capture start {0}
-< 11
-# {0}"
-            );
-        }
-
-        // {0, m} lazy
-        {
-            let route = compile_from_str(r#"'a'{0,5}?"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 5, Counter check %0, from 1, to 5
-  -> 3, Repetition %0, from 1, to 5
-- 5
-  -> 7, Jump
-- 6
-  -> 7, Jump
-  -> 2, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
-            );
-        }
-
-        // {0, 1}
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{0,1}"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'?"#).unwrap().get_debug_text()
-            )
-        }
-
-        // {0, 1} lazy
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{0,1}?"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'??"#).unwrap().get_debug_text()
-            )
-        }
-
-        // {0, 0}
-        {
-            let route = compile_from_str(r#"'a'{0,0}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Jump
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_compile_repeat_at_least() {
-        // {m,}
-        {
-            let route = compile_from_str(r#"'a'{3,}"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 3, Repetition with anchor %0, from 3, to MAX
-  -> 5, Counter check %0, from 3, to MAX
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Jump
-  -> 5, Backtrack %0 -> 5
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 2, Capture start {0}
-< 9
-# {0}"
-            );
-        }
-
-        // lazy
-        {
-            let route = compile_from_str(r#"'a'{3,}?"#).unwrap();
-            let s = route.get_debug_text();
-
-            assert_str_eq!(
-                s,
-                "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc %0
-- 2
-  -> 3, Counter reset %0
-- 3
-  -> 0, Jump
-- 4
-  -> 5, Counter check %0, from 3, to MAX
-  -> 3, Repetition %0, from 3, to MAX
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
-            );
-        }
-
-        // {1,} == one_or_more
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{1,}"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'+"#).unwrap().get_debug_text()
-            );
-        }
-
-        // {1,}? == lazy one_or_more
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{1,}?"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'+?"#).unwrap().get_debug_text()
-            );
-        }
-
-        // {0,} == zero_or_more
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{0,}"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'*"#).unwrap().get_debug_text()
-            );
-        }
-
-        // {0,}? == lazy zero_or_more
-        {
-            assert_str_eq!(
-                compile_from_str(r#"'a'{0,}?"#).unwrap().get_debug_text(),
-                compile_from_str(r#"'a'*?"#).unwrap().get_debug_text()
-            );
-        }
     }
 
     #[test]

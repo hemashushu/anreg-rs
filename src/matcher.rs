@@ -38,6 +38,10 @@ pub fn test(pattern: &str, text: &str) -> bool {
     instance.exec(0).is_some()
 }
 
+// todo
+// replace()
+// replace_all()
+
 #[cfg(test)]
 mod tests {
     use crate::{matcher::match_all, process::MatchGroup};

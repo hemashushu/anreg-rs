@@ -57,6 +57,7 @@ pub fn read_char(data: &[u8], position: usize) -> (u32, usize) {
     (code, byte_length)
 }
 
+#[allow(dead_code)]
 pub fn read_previous_char(data: &[u8], mut position: usize) -> (u32, usize) {
     position -= 1;
     while data[position].leading_ones() == 1 {

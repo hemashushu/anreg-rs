@@ -25,7 +25,7 @@ pub const MAIN_LINE_INDEX: usize = 0;
 pub struct Route {
     pub lines: Vec<Line>,
     pub capture_groups: Vec<CaptureGroup>,
-    pub number_of_counters: usize,
+    // pub number_of_counters: usize,
 }
 
 pub struct Line {
@@ -60,7 +60,7 @@ impl Route {
         Route {
             lines: vec![],
             capture_groups: vec![],
-            number_of_counters: 0,
+            // number_of_counters: 0,
         }
     }
 
@@ -78,11 +78,11 @@ impl Route {
         idx
     }
 
-    pub fn new_counter(&mut self) -> usize {
-        let counter_index = self.number_of_counters;
-        self.number_of_counters += 1;
-        counter_index
-    }
+    // pub fn new_counter(&mut self) -> usize {
+    //     let counter_index = self.number_of_counters;
+    //     self.number_of_counters += 1;
+    //     counter_index
+    // }
 
     pub fn new_capture_group(&mut self, name: Option<String>) -> usize {
         let idx = self.capture_groups.len();
@@ -114,9 +114,9 @@ impl Route {
         self.capture_groups.len()
     }
 
-    pub fn get_number_of_counters(&self) -> usize {
-        self.number_of_counters
-    }
+    // pub fn get_number_of_counters(&self) -> usize {
+    //     self.number_of_counters
+    // }
 
     // for debug
     pub fn get_debug_text(&self) -> String {
@@ -309,6 +309,7 @@ mod tests {
         assert!(route.get_capture_group_index_by_name("bar").is_none());
     }
 
+    /*
     #[test]
     fn test_route_new_counter() {
         let mut route = Route::new();
@@ -325,6 +326,7 @@ mod tests {
         assert_eq!(idx1, 1);
         assert_eq!(idx2, 2);
     }
+    */
 
     #[test]
     fn test_line_append_transition() {
