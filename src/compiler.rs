@@ -17,7 +17,7 @@ use crate::{
         AssertionTransition, BackReferenceTransition, BacktrackingTransition, CaptureEndTransition,
         CaptureStartTransition, CharSetItem, CharSetTransition, CharTransition,
         CounterCheckTransition, CounterIncTransition, CounterResetTransition, JumpTransition,
-        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionAnchorTransition,
+        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionWithAnchorTransition,
         RepetitionTransition, RepetitionType, SpecialCharTransition, StringTransition, Transition,
     },
 };
@@ -696,6 +696,18 @@ impl<'a> Compiler<'a> {
         //         trans                          counter check |   |            |
         //                                                trans     \------------/
         //                                                          backtrack trans
+        //
+        //                         repetition trans
+        //               /------------------------------------\
+        //               |                         counter    |
+        //               |             box       | inc        |
+        //   in          v   jump  /-----------\ v trans      |
+        //  ==o==------==o==------==o in  out o==-------==o|o=/     out
+        //       ^ cnter left      \-----------/     right |o==---==o==
+        //       | reset                                        ^
+        //         trans                          counter check |
+        //                                                trans
+
 
         let port = self.emit_expression(expression)?;
         let counter_index = self.route.new_counter();
@@ -722,8 +734,10 @@ impl<'a> Compiler<'a> {
             Transition::CounterInc(CounterIncTransition::new(counter_index)),
         );
 
+        let out_node_index = line.new_node();
+
         if is_lazy {
-            let out_node_index = line.new_node();
+//            let out_node_index = line.new_node();
 
             line.append_transition(
                 right_node_index,
@@ -740,53 +754,70 @@ impl<'a> Compiler<'a> {
                 Transition::Repetition(RepetitionTransition::new(counter_index, repetition_type)),
             );
 
-            Ok(Port::new(in_node_index, out_node_index))
+            // Ok(Port::new(in_node_index, out_node_index))
         } else {
-            let anchor_node_index = line.new_node();
-            let branch_node_index = line.new_node();
-            let out_node_index = line.new_node();
-
             line.append_transition(
                 right_node_index,
                 left_node_index,
-                Transition::RepetitionAnchor(RepetitionAnchorTransition::new(
-                    counter_index,
-                    repetition_type.clone(),
-                )),
+                Transition::Repetition(RepetitionTransition::new(counter_index, repetition_type.clone())),
             );
 
             line.append_transition(
                 right_node_index,
-                anchor_node_index,
+                out_node_index,
                 Transition::CounterCheck(CounterCheckTransition::new(
                     counter_index,
                     repetition_type,
                 )),
             );
 
-            line.append_transition(
-                anchor_node_index,
-                branch_node_index,
-                Transition::Jump(JumpTransition),
-            );
-
-            line.append_transition(
-                branch_node_index,
-                out_node_index,
-                Transition::Jump(JumpTransition),
-            );
-
-            line.append_transition(
-                branch_node_index,
-                anchor_node_index,
-                Transition::Backtrack(BacktrackingTransition::new(
-                    counter_index,
-                    anchor_node_index,
-                )),
-            );
-
-            Ok(Port::new(in_node_index, out_node_index))
+//             let anchor_node_index = line.new_node();
+//             let branch_node_index = line.new_node();
+//             let out_node_index = line.new_node();
+//
+//             line.append_transition(
+//                 right_node_index,
+//                 left_node_index,
+//                 Transition::RepetitionWithAnchor(RepetitionWithAnchorTransition::new(
+//                     counter_index,
+//                     repetition_type.clone(),
+//                 )),
+//             );
+//
+//             line.append_transition(
+//                 right_node_index,
+//                 anchor_node_index,
+//                 Transition::CounterCheck(CounterCheckTransition::new(
+//                     counter_index,
+//                     repetition_type,
+//                 )),
+//             );
+//
+//             line.append_transition(
+//                 anchor_node_index,
+//                 branch_node_index,
+//                 Transition::Jump(JumpTransition),
+//             );
+//
+//             line.append_transition(
+//                 branch_node_index,
+//                 out_node_index,
+//                 Transition::Jump(JumpTransition),
+//             );
+//
+//             line.append_transition(
+//                 branch_node_index,
+//                 anchor_node_index,
+//                 Transition::Backtrack(BacktrackingTransition::new(
+//                     counter_index,
+//                     anchor_node_index,
+//                 )),
+//             );
+//
+//             Ok(Port::new(in_node_index, out_node_index))
         }
+
+        Ok(Port::new(in_node_index, out_node_index))
     }
 
     fn emit_lookahead_assertion(
@@ -1920,7 +1951,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 1, to MAX
+  -> 3, Repetition with anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
   -> 6, Jump
@@ -1981,7 +2012,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 1, to MAX
+  -> 3, Repetition with anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
   -> 6, Jump
@@ -2052,7 +2083,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 1, to MAX
+  -> 3, Repetition with anchor %0, from 1, to MAX
   -> 5, Counter check %0, from 1, to MAX
 - 5
   -> 6, Jump
@@ -2170,7 +2201,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 3, to 5
+  -> 3, Repetition with anchor %0, from 3, to 5
   -> 5, Counter check %0, from 3, to 5
 - 5
   -> 6, Jump
@@ -2247,7 +2278,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 1, to 5
+  -> 3, Repetition with anchor %0, from 1, to 5
   -> 5, Counter check %0, from 1, to 5
 - 5
   -> 6, Jump
@@ -2356,7 +2387,7 @@ define(letter, ['a'..'f', char_space])
 - 3
   -> 0, Jump
 - 4
-  -> 3, Repetition anchor %0, from 3, to MAX
+  -> 3, Repetition with anchor %0, from 3, to MAX
   -> 5, Counter check %0, from 3, to MAX
 - 5
   -> 6, Jump

@@ -31,7 +31,7 @@ pub enum Transition {
     CounterCheck(CounterCheckTransition),
 
     Repetition(RepetitionTransition),
-    RepetitionAnchor(RepetitionAnchorTransition),
+    RepetitionWithAnchor(RepetitionWithAnchorTransition),
     Backtrack(BacktrackingTransition),
 
     // assertion
@@ -107,7 +107,7 @@ pub struct RepetitionTransition {
     pub repetition_type: RepetitionType,
 }
 
-pub struct RepetitionAnchorTransition {
+pub struct RepetitionWithAnchorTransition {
     pub counter_index: usize,
     pub repetition_type: RepetitionType,
 }
@@ -302,9 +302,9 @@ impl RepetitionTransition {
     }
 }
 
-impl RepetitionAnchorTransition {
+impl RepetitionWithAnchorTransition {
     pub fn new(counter_index: usize, repetition_type: RepetitionType) -> Self {
-        RepetitionAnchorTransition {
+        RepetitionWithAnchorTransition {
             counter_index,
             repetition_type,
         }
@@ -355,7 +355,7 @@ impl Display for Transition {
             Transition::CounterInc(c) => write!(f, "{}", c),
             Transition::CounterCheck(c) => write!(f, "{}", c),
             Transition::Repetition(r) => write!(f, "{}", r),
-            Transition::RepetitionAnchor(r) => write!(f, "{}", r),
+            Transition::RepetitionWithAnchor(r) => write!(f, "{}", r),
             Transition::Backtrack(b) => write!(f, "{}", b),
             Transition::LookAheadAssertion(l) => write!(f, "{}", l),
             Transition::LookBehindAssertion(l) => write!(f, "{}", l),
@@ -500,11 +500,11 @@ impl Display for RepetitionTransition {
     }
 }
 
-impl Display for RepetitionAnchorTransition {
+impl Display for RepetitionWithAnchorTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Repetition anchor %{}, {}",
+            "Repetition with anchor %{}, {}",
             self.counter_index, self.repetition_type
         )
     }
@@ -681,7 +681,7 @@ impl Transition {
             Transition::Assertion(transition) => {
                 let success = match transition.name {
                     AssertionName::Start => is_first_char(instance, position),
-                    AssertionName::End => is_last_char(instance, position),
+                    AssertionName::End => is_end(instance, position),
                     AssertionName::IsBound => is_word_bound(instance, position),
                     AssertionName::IsNotBound => !is_word_bound(instance, position),
                 };
@@ -715,11 +715,11 @@ impl Transition {
             }
             Transition::CounterCheck(transition) => {
                 let count = instance.counters[transition.counter_index];
-                let success = match transition.repetition_type {
+                let can_forward = match transition.repetition_type {
                     RepetitionType::Specified(m) => count == m,
                     RepetitionType::Range(from, to) => count >= from && count <= to,
                 };
-                if success {
+                if can_forward {
                     CheckResult::Success(0)
                 } else {
                     CheckResult::Failure
@@ -727,35 +727,37 @@ impl Transition {
             }
             Transition::Repetition(transition) => {
                 let count = instance.counters[transition.counter_index];
-                let success = match transition.repetition_type {
-                    RepetitionType::Specified(max) => count < max,
-                    RepetitionType::Range(_, max) => count < max,
+                let can_backward = match transition.repetition_type {
+                    RepetitionType::Specified(times) => count < times,
+                    RepetitionType::Range(_, to) => count < to,
                 };
-                if success {
+                if can_backward {
                     CheckResult::Success(0)
                 } else {
                     CheckResult::Failure
                 }
             }
-            Transition::RepetitionAnchor(transition) => {
+            Transition::RepetitionWithAnchor(transition) => {
                 let count = instance.counters[transition.counter_index];
-                let success = match transition.repetition_type {
-                    RepetitionType::Specified(max) => count < max,
-                    RepetitionType::Range(_, max) => count < max,
+                let (should_anchor, can_backward) = match transition.repetition_type {
+                    RepetitionType::Specified(times) => (false, count < times),
+                    RepetitionType::Range(from, to) => (count > from, count < to),
                 };
 
-                if success {
-                    // add anchor
-                    instance.anchors[transition.counter_index].push(position);
-
-                    // return
+                if can_backward {
+                    if should_anchor {
+                        instance.anchors[transition.counter_index].push(position);
+                    }
                     CheckResult::Success(0)
                 } else {
                     CheckResult::Failure
                 }
             }
             Transition::Backtrack(transition) => {
-                // move back the position by anchor
+                // move the position back by anchor
+                // note:
+                // actually the last one of anchors is redundant,
+                // because the position has already been tried and failed.
                 let previous_position_opt = instance.anchors[transition.counter_index].pop();
 
                 if let Some(previous_position) = previous_position_opt {
@@ -763,6 +765,7 @@ impl Transition {
                     instance.append_tasks_by_node(transition.anchor_node_index, previous_position);
                 }
 
+                // always return `failure`
                 CheckResult::Failure
             }
             Transition::LookAheadAssertion(_transition) => todo!(),
@@ -773,7 +776,6 @@ impl Transition {
 
 #[inline]
 fn get_char(instance: &Instance, position: usize) -> (u32, usize) {
-    // instance.chars[position]
     read_char(instance.bytes, position)
 }
 
@@ -783,50 +785,57 @@ fn is_first_char(_instance: &Instance, position: usize) -> bool {
 }
 
 #[inline]
-fn is_last_char(instance: &Instance, position: usize) -> bool {
+fn is_end(instance: &Instance, position: usize) -> bool {
     let total_byte_length = instance.bytes.len();
-    let (_, last_char_byte_length) = read_previous_char(instance.bytes, total_byte_length);
-    position >= total_byte_length - last_char_byte_length
-}
-
-fn get_previous_char(instance: &Instance, position: usize) -> u32 {
-    if is_first_char(instance, position) {
-        0
-    } else {
-        let (codepoint, _) = get_char(instance, position - 1);
-        codepoint
-    }
-}
-
-fn get_next_char(instance: &Instance, position: usize) -> u32 {
-    if is_last_char(instance, position) {
-        0
-    } else {
-        let (_, length) = get_char(instance, position);
-        let (codepoint, _) = get_char(instance, position + length);
-        codepoint
-    }
-}
-
-fn is_word_bound(instance: &Instance, position: usize) -> bool {
-    let (current_char, _) = get_char(instance, position);
-
-    if is_word_char(current_char) {
-        !is_word_char(get_previous_char(instance, position))
-            || !is_word_char(get_next_char(instance, position))
-    } else {
-        is_word_char(get_previous_char(instance, position))
-            || is_word_char(get_next_char(instance, position))
-    }
+    position >= total_byte_length
 }
 
 // #[inline]
-// fn is_word_char(c: char) -> bool {
-//     ('a'..='z').any(|e| e == c)
-//         || ('A'..='Z').any(|e| e == c)
-//         || ('0'..='9').any(|e| e == c)
-//         || c == '_'
+// fn is_last_char(instance: &Instance, position: usize) -> bool {
+//     let total_byte_length = instance.bytes.len();
+//     let (_, last_char_byte_length) = read_previous_char(instance.bytes, total_byte_length);
+//     position >= total_byte_length - last_char_byte_length
 // }
+
+// fn get_previous_char(instance: &Instance, position: usize) -> u32 {
+//     if is_first_char(instance, position) {
+//         0
+//     } else {
+//         let (codepoint, _) = get_char(instance, position - 1);
+//         codepoint
+//     }
+// }
+
+// fn get_next_char(instance: &Instance, position: usize) -> u32 {
+//     if is_last_char(instance, position) {
+//         0
+//     } else {
+//         let (_, length) = get_char(instance, position);
+//         let (codepoint, _) = get_char(instance, position + length);
+//         codepoint
+//     }
+// }
+
+fn is_word_bound(instance: &Instance, position: usize) -> bool {
+    if instance.bytes.len() == 0 {
+        false
+    } else if position == 0 {
+        let (current_char, _) = get_char(instance, position);
+        is_word_char(current_char)
+    } else if position >= instance.bytes.len() {
+        let (previous_char, _) = get_char(instance, position - 1);
+        is_word_char(previous_char)
+    } else {
+        let (current_char, _) = get_char(instance, position);
+        let (previous_char, _) = get_char(instance, position - 1);
+
+        if is_word_char(current_char) {
+            !is_word_char(previous_char)
+        } else {
+            is_word_char(previous_char)
+        }
+    }
+}
 
 fn is_word_char(c: u32) -> bool {
     (c >= 'a' as u32 && c <= 'z' as u32)

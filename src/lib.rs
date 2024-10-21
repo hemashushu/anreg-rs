@@ -21,9 +21,9 @@ mod transition;
 mod utf8reader;
 
 pub mod instance;
-pub mod matcher;
+// pub mod matcher;
 pub mod process;
 pub mod route;
 
 pub use compiler::compile_from_str;
-pub use matcher::{match_all, match_one, test};
+// pub use matcher::{match_all, match_one, test};

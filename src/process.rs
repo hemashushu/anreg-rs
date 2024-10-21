@@ -728,4 +728,447 @@ mod tests {
             assert_eq!(instance.exec_with_values(41), None);
         }
     }
+
+    #[test]
+    fn test_process_special_char() {
+        let process = Process::new("char_any").unwrap();
+        let text = "\n \r\n  \n";
+        //               "  ^    ^^  "
+        let mut instance = process.new_instance(text);
+
+        assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(1, 2)]));
+        assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(4, 5)]));
+        assert_eq!(instance.exec(5), Some(&vec![MatchRange::new(5, 6)]));
+        assert_eq!(instance.exec(6), None);
+    }
+
+    #[test]
+    fn test_process_group() {
+        // anreg group = a sequence of patterns
+        {
+            let process = Process::new("'a', 'b', 'c'").unwrap();
+            let text = "ababcbcabc";
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(2, 5)]));
+            assert_eq!(instance.exec(5), Some(&vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(10), None);
+        }
+
+        {
+            let process = Process::new("'%', char_digit").unwrap();
+            let text = "0123%567%9";
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(4, 6)]));
+            assert_eq!(instance.exec(6), Some(&vec![MatchRange::new(8, 10)]));
+            assert_eq!(instance.exec(10), None);
+        }
+
+        {
+            let process = Process::new("['+','-'], ('%', char_digit)").unwrap();
+            let text = "%12+%56-%9";
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(6), Some(&vec![MatchRange::new(7, 10)]));
+            assert_eq!(instance.exec(10), None);
+        }
+    }
+
+    #[test]
+    fn test_process_start_and_end_assertion() {
+        {
+            let process = Process::new("start, 'a'").unwrap();
+            let text = "ab";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), None);
+        }
+
+        {
+            let process = Process::new("'a', end").unwrap();
+            let text = "ab";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+
+        {
+            let process = Process::new("start, 'a'").unwrap();
+            let text = "ba";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+
+        {
+            let process = Process::new("'a', end").unwrap();
+            let text = "ba";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(2), None);
+        }
+
+        // both 'start' and 'end'
+        {
+            let process = Process::new("start, 'a', end").unwrap();
+            let text = "a";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+        }
+
+        // both 'start' and 'end' - failed 1
+        {
+            let process = Process::new("start, 'a', end").unwrap();
+            let text = "ab";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+
+        // both 'start' and 'end' - failed 2
+        {
+            let process = Process::new("start, 'a', end").unwrap();
+            let text = "ba";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+    }
+
+    #[test]
+    fn test_process_boundary_assertion() {
+        // matching 'boundary + char'
+        {
+            let process = Process::new("is_bound, 'a'").unwrap();
+            let text = "ab";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), None);
+        }
+
+        {
+            let process = Process::new("is_bound, 'a'").unwrap();
+            let text = "a";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), None);
+        }
+
+        {
+            let process = Process::new("is_bound, 'a'").unwrap();
+            let text = " a";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(2), None);
+        }
+
+        {
+            let process = Process::new("is_bound, 'a'").unwrap();
+            let text = "ba";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+
+        // matching 'char + boundary'
+        {
+            let process = Process::new("'a', is_bound").unwrap();
+            let text = "ba";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(1, 2)]));
+            assert_eq!(instance.exec(2), None);
+        }
+
+        {
+            let process = Process::new("'a', is_bound").unwrap();
+            let text = "a";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), None);
+        }
+
+        {
+            let process = Process::new("'a', is_bound").unwrap();
+            let text = "a ";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), None);
+        }
+
+        {
+            let process = Process::new("'a', is_bound").unwrap();
+            let text = "ab";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+    }
+
+    #[test]
+    fn test_process_optional() {
+        // char optional
+        {
+            let process = Process::new("'a', 'b'?, 'c'").unwrap();
+            let text = "ababccbacabc";
+            //               "  ^^^  ^^vvv"
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(2, 5)])); // "abc"
+            assert_eq!(instance.exec(5), Some(&vec![MatchRange::new(7, 9)])); // "ac"
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(9, 12)])); // "abc"
+            assert_eq!(instance.exec(12), None);
+        }
+
+        // char optional - greedy
+        {
+            let process = Process::new("'a', 'b', 'c'?").unwrap();
+            let text = "abcabx";
+            //               "^^^vv"
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(3, 5)]));
+            assert_eq!(instance.exec(5), None);
+        }
+
+        // char optional - lazy
+        {
+            let process = Process::new("'a', 'b', 'c'??").unwrap();
+            let text = "abcabx";
+            //               "^^ ^^ "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 2)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(3, 5)]));
+            assert_eq!(instance.exec(5), None);
+        }
+
+        // group optional
+        {
+            let process = Process::new("'a', ('b','c')?, 'd'").unwrap();
+            let text = "abcabdacdabcdabacad";
+            //               "         ^^^^    ^^"
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(9, 13)]));
+            assert_eq!(instance.exec(13), Some(&vec![MatchRange::new(17, 19)]));
+            assert_eq!(instance.exec(19), None);
+        }
+    }
+
+    #[test]
+    fn test_process_repetition_specified() {
+        // char repetition
+        {
+            let process = Process::new("'a'{3}").unwrap();
+            let text = "abaabbaaabbbaaaaa";
+            //               "      ^^^   ^^^  "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(12, 15)]));
+            assert_eq!(instance.exec(15), None);
+        }
+
+        // charset repetition
+        {
+            let process = Process::new("char_digit{3}").unwrap();
+            let text = "a1ab12abc123abcd1234";
+            //               "         ^^^    ^^^^"
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(9, 12)]));
+            assert_eq!(instance.exec(12), Some(&vec![MatchRange::new(16, 19)]));
+            assert_eq!(instance.exec(19), None);
+        }
+
+        // group repetition
+        {
+            let process = Process::new("('a','b'){3}").unwrap();
+            let text = "abbaababbaababababab";
+            //               "          ^^^^^^    "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(10, 16)]));
+            assert_eq!(instance.exec(16), None);
+        }
+
+        // repetition + other pattern
+        {
+            let process = Process::new("'a'{2}, char_digit").unwrap();
+            let text = "abaabbaa1bb1aa123bb123a11b11";
+            //               "      ^^^   ^^^             "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(12, 15)]));
+            assert_eq!(instance.exec(15), None);
+        }
+    }
+
+    #[test]
+    fn test_process_repetition_range() {
+        // char repetition
+        {
+            let process = Process::new("'a'{1,3}").unwrap();
+            let text = "abaabbaaabbbaaaabbbb";
+            //               "^ ^^  ^^^   ^vvv    "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 4)]));
+            assert_eq!(instance.exec(4), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(12, 15)]));
+            assert_eq!(instance.exec(15), Some(&vec![MatchRange::new(15, 16)]));
+            assert_eq!(instance.exec(16), None);
+        }
+
+        // char repetition lazy
+        {
+            let process = Process::new("'a'{1,3}?").unwrap();
+            let text = "abaabbaaabbbaaaabbbb";
+            //               "^ ^v  ^v^   ^v^v    "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 1)]));
+            assert_eq!(instance.exec(1), Some(&vec![MatchRange::new(2, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(3, 4)]));
+            assert_eq!(instance.exec(4), Some(&vec![MatchRange::new(6, 7)]));
+            assert_eq!(instance.exec(7), Some(&vec![MatchRange::new(7, 8)]));
+            // omit the follow up
+        }
+
+        // char repetition - to MAX
+        {
+            let process = Process::new("'a'{2,}").unwrap();
+            let text = "abaabbaaabbbaaaabbbb";
+            //               "  ^^  ^^^   ^^^^    "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(2, 4)]));
+            assert_eq!(instance.exec(4), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(12, 16)]));
+            assert_eq!(instance.exec(16), None);
+        }
+
+        // char repetition - to MAX - lazy
+        {
+            let process = Process::new("'a'{2,}?").unwrap();
+            let text = "abaabbaaabbbaaaabbbb";
+            //               "  ^^  ^^    ^^vv    "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(2, 4)]));
+            assert_eq!(instance.exec(4), Some(&vec![MatchRange::new(6, 8)]));
+            assert_eq!(instance.exec(8), Some(&vec![MatchRange::new(12, 14)]));
+            assert_eq!(instance.exec(14), Some(&vec![MatchRange::new(14, 16)]));
+            assert_eq!(instance.exec(16), None);
+        }
+    }
+
+    #[test]
+    fn test_process_optional_and_repetition_range() {
+        // implicit
+        {
+            let process = Process::new("'a', 'b'{0,3}, 'c'").unwrap();
+            let text = "acaabcaabbcaabbbcaabbbbc";
+            //               "^^ ^^^ ^^^^ ^^^^^       "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 2)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(6), Some(&vec![MatchRange::new(7, 11)]));
+            assert_eq!(instance.exec(11), Some(&vec![MatchRange::new(12, 17)]));
+            assert_eq!(instance.exec(17), None);
+        }
+
+        // explicit
+        {
+            let process = Process::new("'a', ('b'{2,3})?, 'c'").unwrap();
+            let text = "acaabcaabbcaabbbcaabbbbc";
+            //               "^^     ^^^^ ^^^^^       "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 2)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(7, 11)]));
+            assert_eq!(instance.exec(11), Some(&vec![MatchRange::new(12, 17)]));
+            assert_eq!(instance.exec(17), None);
+        }
+
+        // repetition specified
+        {
+            let process = Process::new("'a', ('b'{2})?, 'c'").unwrap();
+            let text = "acaabcaabbcaabbbcaabbbbc";
+            //               "^^     ^^^^             "
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 2)]));
+            assert_eq!(instance.exec(2), Some(&vec![MatchRange::new(7, 11)]));
+            assert_eq!(instance.exec(17), None);
+        }
+    }
+
+    #[test]
+    fn test_process_repetition_char_any() {
+        // repetition specified
+        {
+            let process = Process::new("char_any{3}").unwrap();
+            let text = "abcdefghijkl";
+            //               "^^^vvv^^^vvv"
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 3)]));
+            assert_eq!(instance.exec(3), Some(&vec![MatchRange::new(3, 6)]));
+            assert_eq!(instance.exec(6), Some(&vec![MatchRange::new(6, 9)]));
+            assert_eq!(instance.exec(9), Some(&vec![MatchRange::new(9, 12)]));
+            assert_eq!(instance.exec(12), None);
+        }
+
+        // repetition range - to MAX
+        {
+            let process = Process::new("char_any+").unwrap();
+            let text = "abcdefghijkl";
+            let mut instance = process.new_instance(text);
+
+            assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 12)]));
+            assert_eq!(instance.exec(12), None);
+        }
+    }
+
+    #[test]
+    fn test_process_repetition_backtracking() {
+//         // backtracking
+//         {
+//             let process = Process::new("start, 'a', char_any+, 'c'").unwrap();
+//             let text = "abbcmn";
+//             //               "^^^^  "
+//             let mut instance = process.new_instance(text);
+//
+//             assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 4)]));
+//         }
+//
+//         // backtracking - failed
+//         // because there is no char between 'a' and 'c'
+//         {
+//             let process = Process::new("start, 'a', char_any+, 'c'").unwrap();
+//             let text = "acmn";
+//             let mut instance = process.new_instance(text);
+//             assert_eq!(instance.exec(0), None);
+//         }
+
+        // backtracking - failed
+        // because there is not enough char between 'a' and 'c'
+        {
+            let process = Process::new("start, 'a', char_any{3,}, 'c'").unwrap();
+            let text = "abbcmn";
+            let mut instance = process.new_instance(text);
+            assert_eq!(instance.exec(0), None);
+        }
+
+        // lazy repetition - no backtracking
+        //         {
+        //             let process = Process::new("'a', char_any+?, 'c'").unwrap();
+        //             let text = "abbcmn";
+        //             //               "^^^^  "
+        //             let mut instance = process.new_instance(text);
+        //
+        //             assert_eq!(instance.exec(0), Some(&vec![MatchRange::new(0, 4)]));
+        //         }
+    }
 }
