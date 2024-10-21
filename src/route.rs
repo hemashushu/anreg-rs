@@ -25,7 +25,6 @@ pub const MAIN_LINE_INDEX: usize = 0;
 pub struct Route {
     pub lines: Vec<Line>,
     pub capture_groups: Vec<CaptureGroup>,
-    // pub number_of_counters: usize,
 }
 
 pub struct Line {
@@ -60,7 +59,6 @@ impl Route {
         Route {
             lines: vec![],
             capture_groups: vec![],
-            // number_of_counters: 0,
         }
     }
 
@@ -78,12 +76,6 @@ impl Route {
         idx
     }
 
-    // pub fn new_counter(&mut self) -> usize {
-    //     let counter_index = self.number_of_counters;
-    //     self.number_of_counters += 1;
-    //     counter_index
-    // }
-
     pub fn new_capture_group(&mut self, name: Option<String>) -> usize {
         let idx = self.capture_groups.len();
         self.capture_groups.push(CaptureGroup { name });
@@ -97,22 +89,30 @@ impl Route {
         })
     }
 
-    pub fn get_capture_group_names(&self) -> Vec<Option<&String>> {
-        self.capture_groups
-            .iter()
-            .map(|item| {
-                if let Some(name) = &item.name {
-                    Some(name)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    pub fn get_capture_group_name_by_index(&self, index:usize) -> Option<&String> {
+        let n = &self.capture_groups[index].name;
+        if let Some(m) = n {
+            Some(m)
+        }else {
+            None
+        }
     }
+    // pub fn get_capture_group_names(&self) -> Vec<Option<&String>> {
+    //     self.capture_groups
+    //         .iter()
+    //         .map(|item| {
+    //             if let Some(name) = &item.name {
+    //                 Some(name)
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .collect()
+    // }
 
-    pub fn get_number_of_capture_groups(&self) -> usize {
-        self.capture_groups.len()
-    }
+    // pub fn get_number_of_capture_groups(&self) -> usize {
+    //     self.capture_groups.len()
+    // }
 
     // pub fn get_number_of_counters(&self) -> usize {
     //     self.number_of_counters
@@ -308,25 +308,6 @@ mod tests {
         assert_eq!(route.get_capture_group_index_by_name("foo"), Some(1));
         assert!(route.get_capture_group_index_by_name("bar").is_none());
     }
-
-    /*
-    #[test]
-    fn test_route_new_counter() {
-        let mut route = Route::new();
-        assert_eq!(route.number_of_counters, 0);
-
-        let idx0 = route.new_counter();
-
-        assert_eq!(idx0, 0);
-        assert_eq!(route.number_of_counters, 1);
-
-        let idx1 = route.new_counter();
-        let idx2 = route.new_counter();
-
-        assert_eq!(idx1, 1);
-        assert_eq!(idx2, 2);
-    }
-    */
 
     #[test]
     fn test_line_append_transition() {

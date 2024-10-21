@@ -13,7 +13,12 @@ use crate::{
     parser::parse_from_str,
     route::{Line, Route},
     transition::{
-        add_char, add_preset_digit, add_preset_space, add_preset_word, add_range, AssertionTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition, CharSetItem, CharSetTransition, CharTransition, CounterCheckTransition, CounterIncTransition, CounterResetTransition, CounterSaveTransition, JumpTransition, LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionTransition, RepetitionType, SpecialCharTransition, StringTransition, Transition
+        add_char, add_preset_digit, add_preset_space, add_preset_word, add_range,
+        AssertionTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition,
+        CharSetItem, CharSetTransition, CharTransition, CounterCheckTransition,
+        CounterIncTransition, CounterResetTransition, CounterSaveTransition, JumpTransition,
+        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionTransition,
+        RepetitionType, SpecialCharTransition, StringTransition, Transition,
     },
 };
 
@@ -694,19 +699,6 @@ impl<'a> Compiler<'a> {
         //       | reset                                        ^
         //         trans                          counter check |
         //                                                trans
-//                            // repetition anchor trans
-//                    //   /------------------------------------\
-//                    //   |                         counter    |
-//                    //   |             box       | inc        |
-//        //   in          v   jump  /-----------\ v trans      |
-//        //  ==o==------==o==------==o in  out o==-------==o|o=/   anchor     branch   out
-//            //   ^ cnter left      \-----------/     right |o==---==o==----==o|o==--==o==
-//            //   | reset                                        ^   ^         |o=\
-//                // trans                          counter check |   |            |
-//                                                    //    trans     \------------/
-//                                                                //  backtrack trans
-
-
 
         let port = self.emit_expression(expression)?;
         // let counter_index = self.route.new_counter();
@@ -718,25 +710,25 @@ impl<'a> Compiler<'a> {
         line.append_transition(
             in_node_index,
             left_node_index,
-            Transition::CounterReset(CounterResetTransition::new()), // counter_index)),
+            Transition::CounterReset(CounterResetTransition),
         );
 
         line.append_transition(
             left_node_index,
             port.in_node_index,
-            Transition::CounterSave(CounterSaveTransition::new()),
+            Transition::CounterSave(CounterSaveTransition),
         );
 
         line.append_transition(
             port.out_node_index,
             right_node_index,
-            Transition::CounterInc(CounterIncTransition::new()), // counter_index)),
+            Transition::CounterInc(CounterIncTransition),
         );
 
         let out_node_index = line.new_node();
 
         if is_lazy {
-//            let out_node_index = line.new_node();
+            //            let out_node_index = line.new_node();
 
             line.append_transition(
                 right_node_index,
@@ -752,7 +744,8 @@ impl<'a> Compiler<'a> {
                 left_node_index,
                 Transition::Repetition(RepetitionTransition::new(
                     // counter_index,
-                    repetition_type)),
+                    repetition_type,
+                )),
             );
 
             // Ok(Port::new(in_node_index, out_node_index))
@@ -762,7 +755,8 @@ impl<'a> Compiler<'a> {
                 left_node_index,
                 Transition::Repetition(RepetitionTransition::new(
                     //counter_index,
-                    repetition_type.clone())),
+                    repetition_type.clone(),
+                )),
             );
 
             line.append_transition(
@@ -774,50 +768,50 @@ impl<'a> Compiler<'a> {
                 )),
             );
 
-//             let anchor_node_index = line.new_node();
-//             let branch_node_index = line.new_node();
-//             let out_node_index = line.new_node();
-//
-//             line.append_transition(
-//                 right_node_index,
-//                 left_node_index,
-//                 Transition::RepetitionWithAnchor(RepetitionWithAnchorTransition::new(
-//                     counter_index,
-//                     repetition_type.clone(),
-//                 )),
-//             );
-//
-//             line.append_transition(
-//                 right_node_index,
-//                 anchor_node_index,
-//                 Transition::CounterCheck(CounterCheckTransition::new(
-//                     counter_index,
-//                     repetition_type,
-//                 )),
-//             );
-//
-//             line.append_transition(
-//                 anchor_node_index,
-//                 branch_node_index,
-//                 Transition::Jump(JumpTransition),
-//             );
-//
-//             line.append_transition(
-//                 branch_node_index,
-//                 out_node_index,
-//                 Transition::Jump(JumpTransition),
-//             );
-//
-//             line.append_transition(
-//                 branch_node_index,
-//                 anchor_node_index,
-//                 Transition::Backtrack(BacktrackingTransition::new(
-//                     counter_index,
-//                     anchor_node_index,
-//                 )),
-//             );
-//
-//             Ok(Port::new(in_node_index, out_node_index))
+            //             let anchor_node_index = line.new_node();
+            //             let branch_node_index = line.new_node();
+            //             let out_node_index = line.new_node();
+            //
+            //             line.append_transition(
+            //                 right_node_index,
+            //                 left_node_index,
+            //                 Transition::RepetitionWithAnchor(RepetitionWithAnchorTransition::new(
+            //                     counter_index,
+            //                     repetition_type.clone(),
+            //                 )),
+            //             );
+            //
+            //             line.append_transition(
+            //                 right_node_index,
+            //                 anchor_node_index,
+            //                 Transition::CounterCheck(CounterCheckTransition::new(
+            //                     counter_index,
+            //                     repetition_type,
+            //                 )),
+            //             );
+            //
+            //             line.append_transition(
+            //                 anchor_node_index,
+            //                 branch_node_index,
+            //                 Transition::Jump(JumpTransition),
+            //             );
+            //
+            //             line.append_transition(
+            //                 branch_node_index,
+            //                 out_node_index,
+            //                 Transition::Jump(JumpTransition),
+            //             );
+            //
+            //             line.append_transition(
+            //                 branch_node_index,
+            //                 anchor_node_index,
+            //                 Transition::Backtrack(BacktrackingTransition::new(
+            //                     counter_index,
+            //                     anchor_node_index,
+            //                 )),
+            //             );
+            //
+            //             Ok(Port::new(in_node_index, out_node_index))
         }
 
         Ok(Port::new(in_node_index, out_node_index))
@@ -1895,7 +1889,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -1912,26 +1907,24 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, times 2
-//   -> 3, Repetition %0, times 2
-// - 5
-//   -> 7, Capture end {0}
-// > 6
-//   -> 2, Capture start {0}
-// < 7
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, times 2
+                       //   -> 3, Repetition %0, times 2
+                       // - 5
+                       //   -> 7, Capture end {0}
+                       // > 6
+                       //   -> 2, Capture start {0}
+                       // < 7
+                       // # {0}"
             );
         }
 
@@ -1982,7 +1975,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -1999,31 +1993,29 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 3, Repetition with anchor %0, from 3, to 5
-//   -> 5, Counter check %0, from 3, to 5
-// - 5
-//   -> 6, Jump
-// - 6
-//   -> 7, Jump
-//   -> 5, Backtrack %0 -> 5
-// - 7
-//   -> 9, Capture end {0}
-// > 8
-//   -> 2, Capture start {0}
-// < 9
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 3, Repetition with anchor %0, from 3, to 5
+                       //   -> 5, Counter check %0, from 3, to 5
+                       // - 5
+                       //   -> 6, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 5, Backtrack %0 -> 5
+                       // - 7
+                       //   -> 9, Capture end {0}
+                       // > 8
+                       //   -> 2, Capture start {0}
+                       // < 9
+                       // # {0}"
             );
         }
 
@@ -2051,25 +2043,24 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, from 3, to 5
-//   -> 3, Repetition %0, from 3, to 5
-// - 5
-//   -> 7, Capture end {0}
-// > 6
-//   -> 2, Capture start {0}
-// < 7
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, from 3, to 5
+                       //   -> 3, Repetition %0, from 3, to 5
+                       // - 5
+                       //   -> 7, Capture end {0}
+                       // > 6
+                       //   -> 2, Capture start {0}
+                       // < 7
+                       // # {0}"
             );
         }
 
@@ -2095,7 +2086,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,"\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2117,35 +2109,34 @@ define(letter, ['a'..'f', char_space])
 > 8
   -> 6, Capture start {0}
 < 9
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 3, Repetition with anchor %0, from 1, to 5
-//   -> 5, Counter check %0, from 1, to 5
-// - 5
-//   -> 6, Jump
-// - 6
-//   -> 7, Jump
-//   -> 5, Backtrack %0 -> 5
-// - 7
-//   -> 9, Jump
-// - 8
-//   -> 2, Jump
-//   -> 9, Jump
-// - 9
-//   -> 11, Capture end {0}
-// > 10
-//   -> 8, Capture start {0}
-// < 11
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 3, Repetition with anchor %0, from 1, to 5
+                       //   -> 5, Counter check %0, from 1, to 5
+                       // - 5
+                       //   -> 6, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 5, Backtrack %0 -> 5
+                       // - 7
+                       //   -> 9, Jump
+                       // - 8
+                       //   -> 2, Jump
+                       //   -> 9, Jump
+                       // - 9
+                       //   -> 11, Capture end {0}
+                       // > 10
+                       //   -> 8, Capture start {0}
+                       // < 11
+                       // # {0}"
             );
         }
 
@@ -2155,7 +2146,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2177,30 +2169,29 @@ define(letter, ['a'..'f', char_space])
 > 8
   -> 6, Capture start {0}
 < 9
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, from 1, to 5
-//   -> 3, Repetition %0, from 1, to 5
-// - 5
-//   -> 7, Jump
-// - 6
-//   -> 7, Jump
-//   -> 2, Jump
-// - 7
-//   -> 9, Capture end {0}
-// > 8
-//   -> 6, Capture start {0}
-// < 9
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, from 1, to 5
+                       //   -> 3, Repetition %0, from 1, to 5
+                       // - 5
+                       //   -> 7, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 2, Jump
+                       // - 7
+                       //   -> 9, Capture end {0}
+                       // > 8
+                       //   -> 6, Capture start {0}
+                       // < 9
+                       // # {0}"
             );
         }
 
@@ -2248,7 +2239,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2265,30 +2257,29 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 3, Repetition with anchor %0, from 3, to MAX
-//   -> 5, Counter check %0, from 3, to MAX
-// - 5
-//   -> 6, Jump
-// - 6
-//   -> 7, Jump
-//   -> 5, Backtrack %0 -> 5
-// - 7
-//   -> 9, Capture end {0}
-// > 8
-//   -> 2, Capture start {0}
-// < 9
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 3, Repetition with anchor %0, from 3, to MAX
+                       //   -> 5, Counter check %0, from 3, to MAX
+                       // - 5
+                       //   -> 6, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 5, Backtrack %0 -> 5
+                       // - 7
+                       //   -> 9, Capture end {0}
+                       // > 8
+                       //   -> 2, Capture start {0}
+                       // < 9
+                       // # {0}"
             );
         }
 
@@ -2298,7 +2289,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2315,25 +2307,24 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, from 3, to MAX
-//   -> 3, Repetition %0, from 3, to MAX
-// - 5
-//   -> 7, Capture end {0}
-// > 6
-//   -> 2, Capture start {0}
-// < 7
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, from 3, to MAX
+                       //   -> 3, Repetition %0, from 3, to MAX
+                       // - 5
+                       //   -> 7, Capture end {0}
+                       // > 6
+                       //   -> 2, Capture start {0}
+                       // < 7
+                       // # {0}"
             );
         }
 
@@ -2423,14 +2414,14 @@ define(letter, ['a'..'f', char_space])
 
     #[test]
     fn test_compile_natation_repetition() {
-
         // one or more
         {
             let route = compile_from_str(r#"'a'+"#).unwrap();
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,"\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2447,30 +2438,29 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 3, Repetition with anchor %0, from 1, to MAX
-//   -> 5, Counter check %0, from 1, to MAX
-// - 5
-//   -> 6, Jump
-// - 6
-//   -> 7, Jump
-//   -> 5, Backtrack %0 -> 5
-// - 7
-//   -> 9, Capture end {0}
-// > 8
-//   -> 2, Capture start {0}
-// < 9
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 3, Repetition with anchor %0, from 1, to MAX
+                       //   -> 5, Counter check %0, from 1, to MAX
+                       // - 5
+                       //   -> 6, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 5, Backtrack %0 -> 5
+                       // - 7
+                       //   -> 9, Capture end {0}
+                       // > 8
+                       //   -> 2, Capture start {0}
+                       // < 9
+                       // # {0}"
             );
         }
 
@@ -2480,7 +2470,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s,"\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2497,25 +2488,24 @@ define(letter, ['a'..'f', char_space])
 > 6
   -> 2, Capture start {0}
 < 7
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, from 1, to MAX
-//   -> 3, Repetition %0, from 1, to MAX
-// - 5
-//   -> 7, Capture end {0}
-// > 6
-//   -> 2, Capture start {0}
-// < 7
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, from 1, to MAX
+                       //   -> 3, Repetition %0, from 1, to MAX
+                       // - 5
+                       //   -> 7, Capture end {0}
+                       // > 6
+                       //   -> 2, Capture start {0}
+                       // < 7
+                       // # {0}"
             );
         }
 
@@ -2525,7 +2515,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2547,35 +2538,34 @@ define(letter, ['a'..'f', char_space])
 > 8
   -> 6, Capture start {0}
 < 9
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 3, Repetition with anchor %0, from 1, to MAX
-//   -> 5, Counter check %0, from 1, to MAX
-// - 5
-//   -> 6, Jump
-// - 6
-//   -> 7, Jump
-//   -> 5, Backtrack %0 -> 5
-// - 7
-//   -> 9, Jump
-// - 8
-//   -> 2, Jump
-//   -> 9, Jump
-// - 9
-//   -> 11, Capture end {0}
-// > 10
-//   -> 8, Capture start {0}
-// < 11
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 3, Repetition with anchor %0, from 1, to MAX
+                       //   -> 5, Counter check %0, from 1, to MAX
+                       // - 5
+                       //   -> 6, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 5, Backtrack %0 -> 5
+                       // - 7
+                       //   -> 9, Jump
+                       // - 8
+                       //   -> 2, Jump
+                       //   -> 9, Jump
+                       // - 9
+                       //   -> 11, Capture end {0}
+                       // > 10
+                       //   -> 8, Capture start {0}
+                       // < 11
+                       // # {0}"
             );
         }
 
@@ -2585,7 +2575,8 @@ define(letter, ['a'..'f', char_space])
             let s = route.get_debug_text();
 
             assert_str_eq!(
-                s, "\
+                s,
+                "\
 - 0
   -> 1, Char 'a'
 - 1
@@ -2607,33 +2598,31 @@ define(letter, ['a'..'f', char_space])
 > 8
   -> 6, Capture start {0}
 < 9
-# {0}"
-// "\
-// - 0
-//   -> 1, Char 'a'
-// - 1
-//   -> 4, Counter inc %0
-// - 2
-//   -> 3, Counter reset %0
-// - 3
-//   -> 0, Jump
-// - 4
-//   -> 5, Counter check %0, from 1, to MAX
-//   -> 3, Repetition %0, from 1, to MAX
-// - 5
-//   -> 7, Jump
-// - 6
-//   -> 7, Jump
-//   -> 2, Jump
-// - 7
-//   -> 9, Capture end {0}
-// > 8
-//   -> 6, Capture start {0}
-// < 9
-// # {0}"
+# {0}" // "\
+                       // - 0
+                       //   -> 1, Char 'a'
+                       // - 1
+                       //   -> 4, Counter inc %0
+                       // - 2
+                       //   -> 3, Counter reset %0
+                       // - 3
+                       //   -> 0, Jump
+                       // - 4
+                       //   -> 5, Counter check %0, from 1, to MAX
+                       //   -> 3, Repetition %0, from 1, to MAX
+                       // - 5
+                       //   -> 7, Jump
+                       // - 6
+                       //   -> 7, Jump
+                       //   -> 2, Jump
+                       // - 7
+                       //   -> 9, Capture end {0}
+                       // > 8
+                       //   -> 6, Capture start {0}
+                       // < 9
+                       // # {0}"
             );
         }
-
     }
 
     #[test]

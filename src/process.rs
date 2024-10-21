@@ -29,19 +29,92 @@ impl Process {
         Ok(Process { route })
     }
 
-    // pub fn new_instance<'a, 'b: 'a>(&'a self, text: &'b str) -> Instance {
-    //     let bytes = text.as_bytes();
-    //     Instance::new(&self.route, bytes)
-    // }
-}
-
-impl<'a> Instance<'a> {
-    pub fn exec(&mut self, route: &Route, start: usize) -> Option<&Vec<MatchRange>> {
-        if !start_main_thread(self, route, start, self.bytes.len()) {
+    pub fn find<'a, 'b>(&'a self, text: &'b str) -> Option<Match<'a, 'b>> {
+        let bytes = text.as_bytes();
+        let mut instance = Instance::from_bytes(bytes);
+        if !instance.exec(&self.route, 0) {
             return None;
         }
 
-        Some(&self.match_ranges)
+        let groups: Vec<MatchGroup> = instance
+            .match_ranges
+            .iter()
+            .enumerate()
+            .map(|(idx, match_range)| {
+                MatchGroup::new(
+                    match_range.start,
+                    match_range.end,
+                    self.route.get_capture_group_name_by_index(idx),
+                    sub_string(bytes, match_range.start, match_range.end),
+                )
+            })
+            .collect();
+
+        Some(Match { groups })
+    }
+
+    pub fn find_iter<'a, 'b>(&'a self, text: &'b str) -> Matches<'a, 'b> {
+        let bytes = text.as_bytes();
+        let instance = Instance::from_bytes(bytes);
+        let matches = Matches::new(&self.route, instance);
+        matches
+    }
+
+    pub fn test(&self, text: &str) -> bool {
+        let bytes = text.as_bytes();
+        let mut instance = Instance::from_bytes(bytes);
+        instance.exec(&self.route, 0)
+    }
+}
+
+pub struct Matches<'a, 'b> {
+    route: &'a Route,
+    instance: Instance<'b>,
+    last_position: usize,
+}
+
+impl<'a, 'b> Matches<'a, 'b> {
+    fn new(route: &'a Route, instance: Instance<'b>) -> Self {
+        Matches {
+            route,
+            instance,
+            last_position: 0,
+        }
+    }
+}
+
+impl<'a, 'b> Iterator for Matches<'a, 'b> {
+    type Item = Match<'a, 'b>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.instance.exec(self.route, self.last_position) {
+            return None;
+        }
+
+        let groups: Vec<MatchGroup> = self
+            .instance
+            .match_ranges
+            .iter()
+            .enumerate()
+            .map(|(idx, match_range)| {
+                MatchGroup::new(
+                    match_range.start,
+                    match_range.end,
+                    self.route.get_capture_group_name_by_index(idx),
+                    sub_string(self.instance.bytes, match_range.start, match_range.end),
+                )
+            })
+            .collect();
+
+        self.last_position = groups[0].end;
+
+        Some(Match { groups })
+    }
+}
+
+impl<'a> Instance<'a> {
+    pub fn exec(&mut self, route: &Route, start: usize) -> bool {
+        start_main_thread(self, route, start, self.bytes.len())
     }
 
     //     pub fn exec_with_values(&mut self, start: usize) -> Option<Vec<MatchGroup>> {
@@ -71,46 +144,53 @@ impl<'a> Instance<'a> {
     //     }
 }
 
-// #[derive(Debug, PartialEq, Clone)]
-// pub struct MatchGroup {
-//     pub name: Option<String>,
-//     pub value: String, // String,
-//     pub start: usize,  // position included
-//     pub end: usize,    // position excluded
-// }
-//
-// impl MatchGroup {
-//     pub fn new(name: Option<String>, value: String, start: usize, end: usize) -> Self {
-//         MatchGroup {
-//             name,
-//             value,
-//             start,
-//             end,
-//         }
-//     }
-// }
-//
-// pub fn get_group_by_name<'a>(groups: &'a [MatchGroup], name: &str) -> Option<&'a MatchGroup> {
-//     groups.iter().find(|item| match &item.name {
-//         Some(s) => s == name,
-//         None => false,
-//     })
-// }
-//
-// pub fn sub_string(bytes: &[u8], start: usize, end_excluded: usize) -> &str {
-//     /*
-//      * convert Vec<char> into String:
-//      * `let s:String = chars.iter().collect()`
-//      * or
-//      * `let s = String::from_iter(&chars)`
-//      */
-//     let slice = &bytes[start..end_excluded];
-//     str::from_utf8(slice).unwrap()
-// }
+#[derive(Debug, PartialEq, Clone)]
+pub struct Match<'a, 'b> {
+    pub groups: Vec<MatchGroup<'a, 'b>>,
+}
+
+impl<'a, 'b> Match<'a, 'b> {
+    pub fn get_group_by_name(&self, name: &str) -> Option<&MatchGroup> {
+        self.groups.iter().find(|item| match item.name {
+            Some(s) => s == name,
+            None => false,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct MatchGroup<'a, 'b> {
+    pub start: usize, // position included
+    pub end: usize,   // position excluded
+    pub name: Option<&'a String>,
+    pub value: &'b str, // String,
+}
+
+impl<'a, 'b> MatchGroup<'a, 'b> {
+    pub fn new(start: usize, end: usize, name: Option<&'a String>, value: &'b str) -> Self {
+        MatchGroup {
+            start,
+            end,
+            name,
+            value,
+        }
+    }
+}
+
+fn sub_string(bytes: &[u8], start: usize, end_excluded: usize) -> &str {
+    /*
+     * convert Vec<char> into String:
+     * `let s:String = chars.iter().collect()`
+     * or
+     * `let s = String::from_iter(&chars)`
+     */
+    let slice = &bytes[start..end_excluded];
+    str::from_utf8(slice).unwrap()
+}
 
 fn start_main_thread(instance: &mut Instance, route: &Route, mut start: usize, end: usize) -> bool {
     // allocate the vector of 'capture positions' and 'repetition counters'
-    let number_of_capture_groups = route.get_number_of_capture_groups();
+    let number_of_capture_groups = route.capture_groups.len();
     // let number_of_counters = instance.route.get_number_of_counters();
     let main_thread = Thread::new(start, end, MAIN_LINE_INDEX);
 
@@ -209,115 +289,46 @@ fn start_thread(instance: &mut Instance, route: &Route, position: usize) -> bool
 
 #[cfg(test)]
 mod tests {
-    use crate::instance::{Instance, MatchRange};
-
-    use super::Process;
+    use super::{Match, MatchGroup, Process};
     use pretty_assertions::assert_eq;
+
+    fn single_group(start: usize, end: usize, value: &str) -> Match {
+        Match {
+            groups: vec![MatchGroup::new(start, end, None, value)],
+        }
+    }
 
     #[test]
     fn test_process_char() {
         // exists in the middle and at the end of the text
         {
             let process = Process::new("'a'").unwrap();
-            let mut instance = Instance::new("babbaa");
+            let mut matches = process.find_iter("babbaa");
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(1, 2)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(1, 2)])
-            );
-
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(4, 5)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(4, 5)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 4),
-                Some(&vec![MatchRange::new(4, 5)])
-            );
-
-            assert_eq!(
-                instance.exec(&process.route, 5),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-
-            // exceed the length of text
-            assert_eq!(instance.exec(&process.route, 6), None);
+            assert_eq!(matches.next(), Some(single_group(1, 2, "a")));
+            assert_eq!(matches.next(), Some(single_group(4, 5, "a")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         // exists in the middle and at the beginning of the text
         {
             let process = Process::new("'a'").unwrap();
-            let mut instance = Instance::new("abaabb");
+            let mut matches = process.find_iter("abaabb");
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(3, 4)])
-            );
-
-            assert_eq!(instance.exec(&process.route, 4), None);
-            assert_eq!(instance.exec(&process.route, 5), None);
-
-            // exceed the length of text
-            assert_eq!(instance.exec(&process.route, 6), None);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "a")));
+            assert_eq!(matches.next(), Some(single_group(3, 4, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         // non-existent
         {
             let process = Process::new("'a'").unwrap();
-            let mut instance = Instance::new("xyz");
+            let mut matches = process.find_iter("xyz");
 
-            assert_eq!(instance.exec(&process.route, 0), None);
-            assert_eq!(instance.exec(&process.route, 1), None);
-            assert_eq!(instance.exec(&process.route, 2), None);
-
-            // exceed the length of text
-            assert_eq!(instance.exec(&process.route, 3), None);
+            assert_eq!(matches.next(), None);
         }
-
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("'a'").unwrap();
-        //             let mut instance = Instance::new("babbaa");
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "a".to_owned(), 1, 2),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(2).unwrap(),
-        //                 vec![MatchGroup::new(None, "a".to_owned(), 4, 5),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(5).unwrap(),
-        //                 vec![MatchGroup::new(None, "a".to_owned(), 5, 6),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(6), None);
-        //         }
     }
 
     #[test]
@@ -325,45 +336,21 @@ mod tests {
         // existent
         {
             let process = Process::new("'文'").unwrap();
-            let mut instance = Instance::new("abc中文字符文字🌏人文");
+            let mut matches = process.find_iter("abc中文字符文字🌏人文");
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(15, 18)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 18),
-                Some(&vec![MatchRange::new(28, 31)])
-            );
-            assert_eq!(instance.exec(&process.route, 31), None);
+            assert_eq!(matches.next(), Some(single_group(6, 9, "文")));
+            assert_eq!(matches.next(), Some(single_group(15, 18, "文")));
+            assert_eq!(matches.next(), Some(single_group(28, 31, "文")));
+            assert_eq!(matches.next(), None);
         }
 
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("'文'").unwrap();
-        //             let mut instance = Instance::new("abc中文字符文字🌏人文");
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "文".to_owned(), 6, 9),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(9).unwrap(),
-        //                 vec![MatchGroup::new(None, "文".to_owned(), 15, 18),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(18).unwrap(),
-        //                 vec![MatchGroup::new(None, "文".to_owned(), 28, 31),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(31), None);
-        //         }
+        // non-existent
+        {
+            let process = Process::new("'文'").unwrap();
+            let mut matches = process.find_iter("abc正则表达式🌏改");
+
+            assert_eq!(matches.next(), None);
+        }
     }
 
     #[test]
@@ -372,71 +359,21 @@ mod tests {
         {
             let process = Process::new("\"abc\"").unwrap();
             let text = "ababcbcabc";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(2, 5)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 5)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(2, 5)])
-            );
-
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(7, 10)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 5),
-                Some(&vec![MatchRange::new(7, 10)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 7),
-                Some(&vec![MatchRange::new(7, 10)])
-            );
-
-            assert_eq!(instance.exec(&process.route, 8), None);
-
-            // exceed the length of text
-            assert_eq!(instance.exec(&process.route, 10), None);
+            assert_eq!(matches.next(), Some(single_group(2, 5, "abc")));
+            assert_eq!(matches.next(), Some(single_group(7, 10, "abc")));
+            assert_eq!(matches.next(), None);
         }
 
         // non-existent
         {
             let process = Process::new("\"abc\"").unwrap();
             let text = "uvwxyz";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(instance.exec(&process.route, 0), None);
-            assert_eq!(instance.exec(&process.route, 1), None);
-            assert_eq!(instance.exec(&process.route, 5), None);
-
-            assert_eq!(instance.exec(&process.route, 6), None);
+            assert_eq!(matches.next(), None);
         }
-
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("\"abc\"").unwrap();
-        //             let text = "ababcbcabc";
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "abc".to_owned(), 2, 5),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(5).unwrap(),
-        //                 vec![MatchGroup::new(None, "abc".to_owned(), 7, 10),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(10), None);
-        //         }
     }
 
     #[test]
@@ -444,48 +381,13 @@ mod tests {
         {
             let process = Process::new("\"文字\"").unwrap();
             let text = "abc文字文本象形文字🎁表情文字";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(3, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(21, 27)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 27),
-                Some(&vec![MatchRange::new(37, 43)])
-            );
-
-            // exceed the length of text
-            assert_eq!(instance.exec(&process.route, 43), None);
+            assert_eq!(matches.next(), Some(single_group(3, 9, "文字")));
+            assert_eq!(matches.next(), Some(single_group(21, 27, "文字")));
+            assert_eq!(matches.next(), Some(single_group(37, 43, "文字")));
+            assert_eq!(matches.next(), None);
         }
-
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("\"文字\"").unwrap();
-        //             let text = "abc文字文本象形文字🎁表情文字";
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "文字".to_owned(), 3, 9),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(9).unwrap(),
-        //                 vec![MatchGroup::new(None, "文字".to_owned(), 21, 27),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(27).unwrap(),
-        //                 vec![MatchGroup::new(None, "文字".to_owned(), 37, 43),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(43), None);
-        //         }
     }
 
     #[test]
@@ -494,80 +396,44 @@ mod tests {
             let process = Process::new("char_word").unwrap();
             let text = "a*1**_ **";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "_")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("char_not_word").unwrap();
             let text = "!a@12 bc_";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "!")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "@")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, " ")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("char_digit").unwrap();
             let text = "1a2b_3de*";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "1")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "2")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "3")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("char_not_digit").unwrap();
             let text = "a1_23 456";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "_")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, " ")));
+            assert_eq!(matches.next(), None);
         }
 
         {
@@ -575,20 +441,11 @@ mod tests {
             let text = " 1\tab\n_*!";
             //               "^ ^-  ^-   "
             //                012 345 678
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, " ")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "\t")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "\n")));
+            assert_eq!(matches.next(), None);
         }
 
         {
@@ -596,46 +453,12 @@ mod tests {
             let text = "a\t1\r\n*   ";
             //               "v  v    v   "
             //                01 23 4 5678
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
-
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("char_word").unwrap();
-        //             let text = "a*1**_ **";
-        //             //               "^ ^  ^   "
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "a".to_owned(), 0, 1),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(1).unwrap(),
-        //                 vec![MatchGroup::new(None, "1".to_owned(), 2, 3),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(3).unwrap(),
-        //                 vec![MatchGroup::new(None, "_".to_owned(), 5, 6),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(6), None);
-        //         }
     }
 
     #[test]
@@ -645,20 +468,11 @@ mod tests {
             let process = Process::new("['a','b','c']").unwrap();
             let text = "adbefcghi";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "b")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "c")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
@@ -666,20 +480,11 @@ mod tests {
             let process = Process::new("!['a','b','c']").unwrap();
             let text = "xa1bb*ccc";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "x")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
 
         // range
@@ -687,20 +492,11 @@ mod tests {
             let process = Process::new("['a'..'c']").unwrap();
             let text = "adbefcghi";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "b")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "c")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
@@ -708,20 +504,11 @@ mod tests {
             let process = Process::new("!['a'..'c']").unwrap();
             let text = "xa1bb*ccc";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "x")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
 
         // ranges
@@ -729,20 +516,11 @@ mod tests {
             let process = Process::new("['a'..'f', '0'..'9']").unwrap();
             let text = "am1npfq*_";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "f")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
@@ -750,41 +528,23 @@ mod tests {
             let process = Process::new("!['a'..'f', '0'..'9']").unwrap();
             let text = "man12*def";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "m")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "n")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
 
         // combine range with preset
         {
             let process = Process::new("['a'..'f', char_digit]").unwrap();
             let text = "am1npfq*_";
-            //               "^ ^  ^   ""
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            //               "^ ^  ^   "
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "f")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
@@ -792,20 +552,11 @@ mod tests {
             let process = Process::new("!['a'..'f', char_digit]").unwrap();
             let text = "man12*def";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "m")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "n")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
 
         // nested
@@ -813,20 +564,11 @@ mod tests {
             let process = Process::new("[['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
             let text = "am1npfq*_";
             //               "^ ^  ^   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "1")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "f")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
@@ -834,45 +576,12 @@ mod tests {
             let process = Process::new("![['a','b','c','d'..'f'], ['0'..'8'], '9']").unwrap();
             let text = "man12*def";
             //               "v v  v   "
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(5, 6)])
-            );
-            assert_eq!(instance.exec(&process.route, 6), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "m")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "n")));
+            assert_eq!(matches.next(), Some(single_group(5, 6, "*")));
+            assert_eq!(matches.next(), None);
         }
-
-        //         // chars - exec_with_values
-        //         {
-        //             let process = Process::new("['a','b','c']").unwrap();
-        //             let text = "adbefcghi";
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "a".to_owned(), 0, 1),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(2).unwrap(),
-        //                 vec![MatchGroup::new(None, "b".to_owned(), 2, 3),]
-        //             );
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(3).unwrap(),
-        //                 vec![MatchGroup::new(None, "c".to_owned(), 5, 6),]
-        //             );
-        //
-        //             assert_eq!(instance.exec_with_values(6), None);
-        //         }
     }
 
     #[test]
@@ -880,115 +589,39 @@ mod tests {
         {
             let process = Process::new("['文','字','🍅']").unwrap();
             let text = "abc正文写字🍉宋体字体🍅测试🍋";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(6, 9)])
-            ); // '文'
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(12, 15)])
-            ); // '字'
-            assert_eq!(
-                instance.exec(&process.route, 15),
-                Some(&vec![MatchRange::new(25, 28)])
-            ); // '字'
-            assert_eq!(
-                instance.exec(&process.route, 28),
-                Some(&vec![MatchRange::new(31, 35)])
-            ); // '🍅'
-            assert_eq!(instance.exec(&process.route, 35), None);
+            assert_eq!(matches.next(), Some(single_group(6, 9, "文")));
+            assert_eq!(matches.next(), Some(single_group(12, 15, "字")));
+            assert_eq!(matches.next(), Some(single_group(25, 28, "字")));
+            assert_eq!(matches.next(), Some(single_group(31, 35, "🍅")));
+            assert_eq!(matches.next(), None);
         }
 
         // negative
         {
             let process = Process::new("!['文','字','🍅']").unwrap();
             let text = "哦字文🍅文噢字🍅文文字字喔";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 3)])
-            ); // '哦'
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(16, 19)])
-            ); // '噢'
-            assert_eq!(
-                instance.exec(&process.route, 19),
-                Some(&vec![MatchRange::new(38, 41)])
-            ); // '喔'
-            assert_eq!(instance.exec(&process.route, 41), None);
+            assert_eq!(matches.next(), Some(single_group(0, 3, "哦")));
+            assert_eq!(matches.next(), Some(single_group(16, 19, "噢")));
+            assert_eq!(matches.next(), Some(single_group(38, 41, "喔")));
+            assert_eq!(matches.next(), None);
         }
-
-        //         // exec_with_values
-        //         {
-        //             let process = Process::new("['文','字','🍅']").unwrap();
-        //             let text = "abc正文写字🍉宋体字体🍅测试🍋";
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "文".to_owned(), 6, 9)]
-        //             );
-        //             assert_eq!(
-        //                 instance.exec_with_values(9).unwrap(),
-        //                 vec![MatchGroup::new(None, "字".to_owned(), 12, 15)]
-        //             );
-        //             assert_eq!(
-        //                 instance.exec_with_values(15).unwrap(),
-        //                 vec![MatchGroup::new(None, "字".to_owned(), 25, 28)]
-        //             );
-        //             assert_eq!(
-        //                 instance.exec_with_values(28).unwrap(),
-        //                 vec![MatchGroup::new(None, "🍅".to_owned(), 31, 35)]
-        //             );
-        //             assert_eq!(instance.exec_with_values(35), None);
-        //         }
-
-        //         // exec_with_values - negative
-        //         {
-        //             let process = Process::new("!['文','字','🍅']").unwrap();
-        //             let text = "哦字文🍅文噢字🍅文文字字喔";
-        //             let mut instance = Instance::new(text);
-        //
-        //             assert_eq!(
-        //                 instance.exec_with_values(0).unwrap(),
-        //                 vec![MatchGroup::new(None, "哦".to_owned(), 0, 3)]
-        //             );
-        //             assert_eq!(
-        //                 instance.exec_with_values(3).unwrap(),
-        //                 vec![MatchGroup::new(None, "噢".to_owned(), 16, 19)]
-        //             );
-        //             assert_eq!(
-        //                 instance.exec_with_values(19).unwrap(),
-        //                 vec![MatchGroup::new(None, "喔".to_owned(), 38, 41)]
-        //             );
-        //             assert_eq!(instance.exec_with_values(41), None);
-        //         }
     }
 
     #[test]
     fn test_process_special_char() {
         let process = Process::new("char_any").unwrap();
-        let text = "\n \r\n  \n";
+        let text = "\na\r\n1 \n";
         //               "  ^    ^^  "
-        let mut instance = Instance::new(text);
+        let mut matches = process.find_iter(text);
 
-        assert_eq!(
-            instance.exec(&process.route, 0),
-            Some(&vec![MatchRange::new(1, 2)])
-        );
-        assert_eq!(
-            instance.exec(&process.route, 2),
-            Some(&vec![MatchRange::new(4, 5)])
-        );
-        assert_eq!(
-            instance.exec(&process.route, 5),
-            Some(&vec![MatchRange::new(5, 6)])
-        );
-        assert_eq!(instance.exec(&process.route, 6), None);
+        assert_eq!(matches.next(), Some(single_group(1, 2, "a")));
+        assert_eq!(matches.next(), Some(single_group(4, 5, "1")));
+        assert_eq!(matches.next(), Some(single_group(5, 6, " ")));
+        assert_eq!(matches.next(), None);
     }
 
     #[test]
@@ -997,49 +630,31 @@ mod tests {
         {
             let process = Process::new("'a', 'b', 'c'").unwrap();
             let text = "ababcbcabc";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(2, 5)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 5),
-                Some(&vec![MatchRange::new(7, 10)])
-            );
-            assert_eq!(instance.exec(&process.route, 10), None);
+            assert_eq!(matches.next(), Some(single_group(2, 5, "abc")));
+            assert_eq!(matches.next(), Some(single_group(7, 10, "abc")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'%', char_digit").unwrap();
             let text = "0123%567%9";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(4, 6)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 6),
-                Some(&vec![MatchRange::new(8, 10)])
-            );
-            assert_eq!(instance.exec(&process.route, 10), None);
+            assert_eq!(matches.next(), Some(single_group(4, 6, "%5")));
+            assert_eq!(matches.next(), Some(single_group(8, 10, "%9")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("['+','-'], ('%', char_digit)").unwrap();
             let text = "%12+%56-%9";
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(3, 6)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 6),
-                Some(&vec![MatchRange::new(7, 10)])
-            );
-            assert_eq!(instance.exec(&process.route, 10), None);
+            assert_eq!(matches.next(), Some(single_group(3, 6, "+%5")));
+            assert_eq!(matches.next(), Some(single_group(7, 10, "-%9")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1048,64 +663,63 @@ mod tests {
         {
             let process = Process::new("start, 'a'").unwrap();
             let text = "ab";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(instance.exec(&process.route, 1), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'a', end").unwrap();
             let text = "ab";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("start, 'a'").unwrap();
             let text = "ba";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'a', end").unwrap();
             let text = "ba";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(1, 2)])
-            );
-            assert_eq!(instance.exec(&process.route, 2), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(1, 2, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         // both 'start' and 'end'
         {
             let process = Process::new("start, 'a', end").unwrap();
             let text = "a";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         // both 'start' and 'end' - failed 1
         {
             let process = Process::new("start, 'a', end").unwrap();
             let text = "ab";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
 
         // both 'start' and 'end' - failed 2
         {
             let process = Process::new("start, 'a', end").unwrap();
             let text = "ba";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1115,82 +729,72 @@ mod tests {
         {
             let process = Process::new("is_bound, 'a'").unwrap();
             let text = "ab";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(instance.exec(&process.route, 1), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("is_bound, 'a'").unwrap();
             let text = "a";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(instance.exec(&process.route, 1), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("is_bound, 'a'").unwrap();
             let text = " a";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(1, 2)])
-            );
-            assert_eq!(instance.exec(&process.route, 2), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(1, 2, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("is_bound, 'a'").unwrap();
             let text = "ba";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
 
         // matching 'char + boundary'
         {
             let process = Process::new("'a', is_bound").unwrap();
             let text = "ba";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(1, 2)])
-            );
-            assert_eq!(instance.exec(&process.route, 2), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(1, 2, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'a', is_bound").unwrap();
             let text = "a";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(instance.exec(&process.route, 1), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'a', is_bound").unwrap();
             let text = "a ";
-            let mut instance = Instance::new(text);
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(instance.exec(&process.route, 1), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         {
             let process = Process::new("'a', is_bound").unwrap();
             let text = "ab";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1201,21 +805,12 @@ mod tests {
             let process = Process::new("'a', 'b'?, 'c'").unwrap();
             let text = "ababccbacabc";
             //               "  ^^^  ^^vvv"
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(2, 5)])
-            ); // "abc"
-            assert_eq!(
-                instance.exec(&process.route, 5),
-                Some(&vec![MatchRange::new(7, 9)])
-            ); // "ac"
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(9, 12)])
-            ); // "abc"
-            assert_eq!(instance.exec(&process.route, 12), None);
+            assert_eq!(matches.next(), Some(single_group(2, 5, "abc")));
+            assert_eq!(matches.next(), Some(single_group(7, 9, "ac")));
+            assert_eq!(matches.next(), Some(single_group(9, 12, "abc")));
+            assert_eq!(matches.next(), None);
         }
 
         // char optional - greedy
@@ -1223,17 +818,11 @@ mod tests {
             let process = Process::new("'a', 'b', 'c'?").unwrap();
             let text = "abcabx";
             //               "^^^vv"
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(3, 5)])
-            );
-            assert_eq!(instance.exec(&process.route, 5), None);
+            assert_eq!(matches.next(), Some(single_group(0, 3, "abc")));
+            assert_eq!(matches.next(), Some(single_group(3, 5, "ab")));
+            assert_eq!(matches.next(), None);
         }
 
         // char optional - lazy
@@ -1241,17 +830,11 @@ mod tests {
             let process = Process::new("'a', 'b', 'c'??").unwrap();
             let text = "abcabx";
             //               "^^ ^^ "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 2)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(3, 5)])
-            );
-            assert_eq!(instance.exec(&process.route, 5), None);
+            assert_eq!(matches.next(), Some(single_group(0, 2, "ab")));
+            assert_eq!(matches.next(), Some(single_group(3, 5, "ab")));
+            assert_eq!(matches.next(), None);
         }
 
         // group optional
@@ -1259,17 +842,11 @@ mod tests {
             let process = Process::new("'a', ('b','c')?, 'd'").unwrap();
             let text = "abcabdacdabcdabacad";
             //               "         ^^^^    ^^"
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(9, 13)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 13),
-                Some(&vec![MatchRange::new(17, 19)])
-            );
-            assert_eq!(instance.exec(&process.route, 19), None);
+            assert_eq!(matches.next(), Some(single_group(9, 13, "abcd")));
+            assert_eq!(matches.next(), Some(single_group(17, 19, "ad")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1280,35 +857,23 @@ mod tests {
             let process = Process::new("'a'{3}").unwrap();
             let text = "abaabbaaabbbaaaaa";
             //               "      ^^^   ^^^  "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(12, 15)])
-            );
-            assert_eq!(instance.exec(&process.route, 15), None);
+            assert_eq!(matches.next(), Some(single_group(6, 9, "aaa")));
+            assert_eq!(matches.next(), Some(single_group(12, 15, "aaa")));
+            assert_eq!(matches.next(), None);
         }
 
         // charset repetition
         {
             let process = Process::new("char_digit{3}").unwrap();
             let text = "a1ab12abc123abcd1234";
-            //               "         ^^^    ^^^^"
-            let mut instance = Instance::new(text);
+            //               "         ^^^    ^^^ "
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(9, 12)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 12),
-                Some(&vec![MatchRange::new(16, 19)])
-            );
-            assert_eq!(instance.exec(&process.route, 19), None);
+            assert_eq!(matches.next(), Some(single_group(9, 12, "123")));
+            assert_eq!(matches.next(), Some(single_group(16, 19, "123")));
+            assert_eq!(matches.next(), None);
         }
 
         // group repetition
@@ -1316,13 +881,10 @@ mod tests {
             let process = Process::new("('a','b'){3}").unwrap();
             let text = "abbaababbaababababab";
             //               "          ^^^^^^    "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(10, 16)])
-            );
-            assert_eq!(instance.exec(&process.route, 16), None);
+            assert_eq!(matches.next(), Some(single_group(10, 16, "ababab")));
+            assert_eq!(matches.next(), None);
         }
 
         // repetition + other pattern
@@ -1330,17 +892,11 @@ mod tests {
             let process = Process::new("'a'{2}, char_digit").unwrap();
             let text = "abaabbaa1bb1aa123bb123a11b11";
             //               "      ^^^   ^^^             "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(12, 15)])
-            );
-            assert_eq!(instance.exec(&process.route, 15), None);
+            assert_eq!(matches.next(), Some(single_group(6, 9, "aa1")));
+            assert_eq!(matches.next(), Some(single_group(12, 15, "aa1")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1350,30 +906,15 @@ mod tests {
         {
             let process = Process::new("'a'{1,3}").unwrap();
             let text = "abaabbaaabbbaaaabbbb";
-            //               "^ ^^  ^^^   ^vvv    "
-            let mut instance = Instance::new(text);
+            //               "^ ^^  ^^^   ^^^v    "
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 4)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 4),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(12, 15)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 15),
-                Some(&vec![MatchRange::new(15, 16)])
-            );
-            assert_eq!(instance.exec(&process.route, 16), None);
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 4, "aa")));
+            assert_eq!(matches.next(), Some(single_group(6, 9, "aaa")));
+            assert_eq!(matches.next(), Some(single_group(12, 15, "aaa")));
+            assert_eq!(matches.next(), Some(single_group(15, 16, "a")));
+            assert_eq!(matches.next(), None);
         }
 
         // char repetition lazy
@@ -1381,28 +922,13 @@ mod tests {
             let process = Process::new("'a'{1,3}?").unwrap();
             let text = "abaabbaaabbbaaaabbbb";
             //               "^ ^v  ^v^   ^v^v    "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 1)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 1),
-                Some(&vec![MatchRange::new(2, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(3, 4)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 4),
-                Some(&vec![MatchRange::new(6, 7)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 7),
-                Some(&vec![MatchRange::new(7, 8)])
-            );
+            assert_eq!(matches.next(), Some(single_group(0, 1, "a")));
+            assert_eq!(matches.next(), Some(single_group(2, 3, "a")));
+            assert_eq!(matches.next(), Some(single_group(3, 4, "a")));
+            assert_eq!(matches.next(), Some(single_group(6, 7, "a")));
+            assert_eq!(matches.next(), Some(single_group(7, 8, "a")));
             // omit the follow up
         }
 
@@ -1411,21 +937,12 @@ mod tests {
             let process = Process::new("'a'{2,}").unwrap();
             let text = "abaabbaaabbbaaaabbbb";
             //               "  ^^  ^^^   ^^^^    "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(2, 4)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 4),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(12, 16)])
-            );
-            assert_eq!(instance.exec(&process.route, 16), None);
+            assert_eq!(matches.next(), Some(single_group(2, 4, "aa")));
+            assert_eq!(matches.next(), Some(single_group(6, 9, "aaa")));
+            assert_eq!(matches.next(), Some(single_group(12, 16, "aaaa")));
+            assert_eq!(matches.next(), None);
         }
 
         // char repetition - to MAX - lazy
@@ -1433,25 +950,13 @@ mod tests {
             let process = Process::new("'a'{2,}?").unwrap();
             let text = "abaabbaaabbbaaaabbbb";
             //               "  ^^  ^^    ^^vv    "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(2, 4)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 4),
-                Some(&vec![MatchRange::new(6, 8)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 8),
-                Some(&vec![MatchRange::new(12, 14)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 14),
-                Some(&vec![MatchRange::new(14, 16)])
-            );
-            assert_eq!(instance.exec(&process.route, 16), None);
+            assert_eq!(matches.next(), Some(single_group(2, 4, "aa")));
+            assert_eq!(matches.next(), Some(single_group(6, 8, "aa")));
+            assert_eq!(matches.next(), Some(single_group(12, 14, "aa")));
+            assert_eq!(matches.next(), Some(single_group(14, 16, "aa")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1462,25 +967,13 @@ mod tests {
             let process = Process::new("'a', 'b'{0,3}, 'c'").unwrap();
             let text = "acaabcaabbcaabbbcaabbbbc";
             //               "^^ ^^^ ^^^^ ^^^^^       "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 2)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(3, 6)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 6),
-                Some(&vec![MatchRange::new(7, 11)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 11),
-                Some(&vec![MatchRange::new(12, 17)])
-            );
-            assert_eq!(instance.exec(&process.route, 17), None);
+            assert_eq!(matches.next(), Some(single_group(0, 2, "ac")));
+            assert_eq!(matches.next(), Some(single_group(3, 6, "abc")));
+            assert_eq!(matches.next(), Some(single_group(7, 11, "abbc")));
+            assert_eq!(matches.next(), Some(single_group(12, 17, "abbbc")));
+            assert_eq!(matches.next(), None);
         }
 
         // explicit
@@ -1488,21 +981,12 @@ mod tests {
             let process = Process::new("'a', ('b'{2,3})?, 'c'").unwrap();
             let text = "acaabcaabbcaabbbcaabbbbc";
             //               "^^     ^^^^ ^^^^^       "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 2)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(7, 11)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 11),
-                Some(&vec![MatchRange::new(12, 17)])
-            );
-            assert_eq!(instance.exec(&process.route, 17), None);
+            assert_eq!(matches.next(), Some(single_group(0, 2, "ac")));
+            assert_eq!(matches.next(), Some(single_group(7, 11, "abbc")));
+            assert_eq!(matches.next(), Some(single_group(12, 17, "abbbc")));
+            assert_eq!(matches.next(), None);
         }
 
         // repetition specified
@@ -1510,17 +994,11 @@ mod tests {
             let process = Process::new("'a', ('b'{2})?, 'c'").unwrap();
             let text = "acaabcaabbcaabbbcaabbbbc";
             //               "^^     ^^^^             "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 2)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 2),
-                Some(&vec![MatchRange::new(7, 11)])
-            );
-            assert_eq!(instance.exec(&process.route, 17), None);
+            assert_eq!(matches.next(), Some(single_group(0, 2, "ac")));
+            assert_eq!(matches.next(), Some(single_group(7, 11, "abbc")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1529,40 +1007,23 @@ mod tests {
         // repetition specified
         {
             let process = Process::new("char_any{3}").unwrap();
-            let text = "abcdefghijkl";
-            //               "^^^vvv^^^vvv"
-            let mut instance = Instance::new(text);
+            let text = "abcdefgh";
+            //               "^^^vvv  "
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 3)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 3),
-                Some(&vec![MatchRange::new(3, 6)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 6),
-                Some(&vec![MatchRange::new(6, 9)])
-            );
-            assert_eq!(
-                instance.exec(&process.route, 9),
-                Some(&vec![MatchRange::new(9, 12)])
-            );
-            assert_eq!(instance.exec(&process.route, 12), None);
+            assert_eq!(matches.next(), Some(single_group(0, 3, "abc")));
+            assert_eq!(matches.next(), Some(single_group(3, 6, "def")));
+            assert_eq!(matches.next(), None);
         }
 
         // repetition range - to MAX
         {
             let process = Process::new("char_any+").unwrap();
-            let text = "abcdefghijkl";
-            let mut instance = Instance::new(text);
+            let text = "abcdefg";
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 12)])
-            );
-            assert_eq!(instance.exec(&process.route, 12), None);
+            assert_eq!(matches.next(), Some(single_group(0, 7, "abcdefg")));
+            assert_eq!(matches.next(), None);
         }
     }
 
@@ -1573,12 +1034,9 @@ mod tests {
             let process = Process::new("start, 'a', char_any+, 'c'").unwrap();
             let text = "abbcmn";
             //               "^^^^  "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 4)])
-            );
+            assert_eq!(matches.next(), Some(single_group(0, 4, "abbc")));
         }
 
         // backtracking - failed
@@ -1586,8 +1044,8 @@ mod tests {
         {
             let process = Process::new("start, 'a', char_any+, 'c'").unwrap();
             let text = "acmn";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), None);
         }
 
         // backtracking - failed
@@ -1595,8 +1053,8 @@ mod tests {
         {
             let process = Process::new("start, 'a', char_any{3,}, 'c'").unwrap();
             let text = "abbcmn";
-            let mut instance = Instance::new(text);
-            assert_eq!(instance.exec(&process.route, 0), None);
+            let mut matches = process.find_iter(text);
+            assert_eq!(matches.next(), None);
         }
 
         // lazy repetition - no backtracking
@@ -1604,12 +1062,17 @@ mod tests {
             let process = Process::new("'a', char_any+?, 'c'").unwrap();
             let text = "abbcmn";
             //               "^^^^  "
-            let mut instance = Instance::new(text);
+            let mut matches = process.find_iter(text);
 
-            assert_eq!(
-                instance.exec(&process.route, 0),
-                Some(&vec![MatchRange::new(0, 4)])
-            );
+            assert_eq!(matches.next(), Some(single_group(0, 4, "abbc")));
         }
+
+        // nested backtracking
+        // todo!()
+    }
+
+    #[test]
+    fn test_process_capture() {
+        //
     }
 }
