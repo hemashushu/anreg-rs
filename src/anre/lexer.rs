@@ -530,7 +530,7 @@ impl Lexer<'_> {
                             None => {
                                 // `\` + EOF
                                 return Err(AnreError::UnexpectedEndOfDocument(
-                                    "Incomplete escape sequence.".to_owned(),
+                                    "Incomplete escape sequence.".to_string(),
                                 ));
                             }
                         }
@@ -538,7 +538,7 @@ impl Lexer<'_> {
                     '\'' => {
                         // `''`
                         return Err(AnreError::MessageWithRange(
-                            "Empty character literal.".to_owned(),
+                            "Empty character literal.".to_string(),
                             Range::new(&self.pop_position_from_stack(), &self.last_position),
                         ));
                     }
@@ -551,7 +551,7 @@ impl Lexer<'_> {
             None => {
                 // `'EOF`
                 return Err(AnreError::UnexpectedEndOfDocument(
-                    "Incomplete character literal.".to_owned(),
+                    "Incomplete character literal.".to_string(),
                 ));
             }
         };
@@ -564,14 +564,14 @@ impl Lexer<'_> {
             Some(_) => {
                 // `'a?`
                 return Err(AnreError::MessageWithPosition(
-                    "Expected a closing quote for a character literal.".to_owned(),
+                    "Expected a closing quote for a character literal.".to_string(),
                     self.last_position,
                 ));
             }
             None => {
                 // `'aEOF`
                 return Err(AnreError::UnexpectedEndOfDocument(
-                    "Incomplete character literal.".to_owned(),
+                    "Incomplete character literal.".to_string(),
                 ));
             }
         }
@@ -614,7 +614,7 @@ impl Lexer<'_> {
                 None => {
                     // EOF
                     return Err(AnreError::UnexpectedEndOfDocument(
-                        "Incomplete unicode escape sequence.".to_owned(),
+                        "Incomplete unicode escape sequence.".to_string(),
                     ));
                 }
             }
@@ -626,7 +626,7 @@ impl Lexer<'_> {
 
         if codepoint_buffer.len() > 6 {
             return Err(AnreError::MessageWithRange(
-                "Unicode code point exceeds six digits.".to_owned(),
+                "Unicode code point exceeds six digits.".to_string(),
                 Range::new(&self.position_stack.pop().unwrap(), &self.last_position),
             ));
         }
@@ -637,7 +637,7 @@ impl Lexer<'_> {
 
         if codepoint_buffer.is_empty() {
             return Err(AnreError::MessageWithRange(
-                "Unicode escape sequence has an empty code point.".to_owned(),
+                "Unicode escape sequence has an empty code point.".to_string(),
                 codepoint_range,
             ));
         }
@@ -653,7 +653,7 @@ impl Lexer<'_> {
             Ok(c)
         } else {
             Err(AnreError::MessageWithRange(
-                "Invalid Unicode code point.".to_owned(),
+                "Invalid Unicode code point.".to_string(),
                 codepoint_range,
             ))
         }
@@ -720,7 +720,7 @@ impl Lexer<'_> {
                                                 string_buffer.push(ch);
                                             } else {
                                                 return Err(AnreError::MessageWithPosition(
-                                                    "Missing opening brace for Unicode escape sequence.".to_owned(),
+                                                    "Missing opening brace for Unicode escape sequence.".to_string(),
                                                     self.last_position
                                                 ));
                                             }
@@ -739,7 +739,7 @@ impl Lexer<'_> {
                                 None => {
                                     // `\` + EOF
                                     return Err(AnreError::UnexpectedEndOfDocument(
-                                        "Incomplete escape sequence.".to_owned(),
+                                        "Incomplete escape sequence.".to_string(),
                                     ));
                                 }
                             }
@@ -761,7 +761,7 @@ impl Lexer<'_> {
                 None => {
                     // Incomplete string literal (`"...EOF`).
                     return Err(AnreError::UnexpectedEndOfDocument(
-                        "Incomplete string literal.".to_owned(),
+                        "Incomplete string literal.".to_string(),
                     ));
                 }
             }
@@ -846,9 +846,9 @@ impl Lexer<'_> {
                 }
                 None => {
                     let msg = if block_comment_depth > 1 {
-                        "Incomplete nested block comment.".to_owned()
+                        "Incomplete nested block comment.".to_string()
                     } else {
-                        "Incomplete block comment.".to_owned()
+                        "Incomplete block comment.".to_string()
                     };
 
                     return Err(AnreError::UnexpectedEndOfDocument(msg));
@@ -1743,7 +1743,7 @@ mod tests {
         assert_eq!(
             lex_from_str("foo // bar").unwrap(),
             vec![TokenWithRange::new(
-                Token::Identifier("foo".to_owned()),
+                Token::Identifier("foo".to_string()),
                 Range::from_position_and_length(&Position::new(0, 0, 0), 3)
             ),]
         );
@@ -1751,7 +1751,7 @@ mod tests {
         assert_eq!(
             lex_from_str("abc // def\n// xyz\n").unwrap(),
             vec![TokenWithRange::new(
-                Token::Identifier("abc".to_owned()),
+                Token::Identifier("abc".to_string()),
                 Range::from_position_and_length(&Position::new(0, 0, 0), 3)
             ),]
         );
@@ -1797,11 +1797,11 @@ mod tests {
             lex_from_str("foo /* hello */ bar").unwrap(),
             vec![
                 TokenWithRange::new(
-                    Token::Identifier("foo".to_owned()),
+                    Token::Identifier("foo".to_string()),
                     Range::from_position_and_length(&Position::new(0, 0, 0), 3)
                 ),
                 TokenWithRange::new(
-                    Token::Identifier("bar".to_owned()),
+                    Token::Identifier("bar".to_string()),
                     Range::from_position_and_length(&Position::new(16, 0, 16), 3)
                 ),
             ]

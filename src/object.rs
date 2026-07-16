@@ -148,19 +148,19 @@ impl Map {
             buffer.push(self.routes[0].get_debug_text());
         } else {
             for (route_index, route) in self.routes.iter().enumerate() {
-                buffer.push(format!("= ${}", route_index));
+                buffer.push(format!("= route: ${}", route_index));
                 buffer.push(route.get_debug_text());
+                buffer.push("".to_string());
             }
         }
 
         // Capture groups
-        for (capture_group_index, opt_capture_group_name) in
-            self.capture_groups.iter().enumerate()
+        for (capture_group_index, opt_capture_group_name) in self.capture_groups.iter().enumerate()
         {
             let s = if let Some(name) = &opt_capture_group_name {
-                format!("# {{{}}}, {}", capture_group_index, name)
+                format!("# capture: {{{}}}, name: {}", capture_group_index, name)
             } else {
-                format!("# {{{}}}", capture_group_index)
+                format!("# capture: {{{}}}", capture_group_index)
             };
             buffer.push(s);
         }
@@ -210,22 +210,19 @@ impl Route {
 
         for (node_index, node) in self.nodes.iter().enumerate() {
             // Node
-            let prefix = if node_index == self.entry_node_index {
-                '>'
+            if node_index == self.entry_node_index {
+                buffer.push(format!("* node: {} (in)", node_index));
             } else if node_index == self.exit_node_index {
-                '<'
+                buffer.push(format!("* node: {} (out)", node_index));
             } else {
-                '-'
-            };
-
-            let s = format!("{} {}", prefix, node_index);
-            buffer.push(s);
+                buffer.push(format!("* node: {}", node_index));
+            }
 
             // Transition items
             for transition_item in &node.path {
                 let s = format!(
-                    "  -> {}, {}",
-                    transition_item.target_node_index, transition_item.transition
+                    "  - {} -> {}",
+                    transition_item.transition, transition_item.target_node_index
                 );
                 buffer.push(s);
             }
@@ -331,7 +328,7 @@ mod tests {
             assert_str_eq!(
                 route.get_debug_text(),
                 "\
-> 0"
+* node: 0 (in)"
             );
 
             // Create other nodes
@@ -345,10 +342,10 @@ mod tests {
             assert_str_eq!(
                 route.get_debug_text(),
                 "\
-- 0
-> 1
-- 2
-< 3"
+* node: 0
+* node: 1 (in)
+* node: 2
+* node: 3 (out)"
             );
         }
 
@@ -363,13 +360,15 @@ mod tests {
             assert_str_eq!(
                 object.get_debug_text(),
                 "\
-= $0
-- 0
-> 1
-- 2
-< 3
-= $1
-> 0"
+= route: $0
+* node: 0
+* node: 1 (in)
+* node: 2
+* node: 3 (out)
+
+= route: $1
+* node: 0 (in)
+"
             );
         }
     }
@@ -384,17 +383,17 @@ mod tests {
         route.create_node();
 
         object.create_capture_group(None);
-        object.create_capture_group(Some("foo".to_owned()));
+        object.create_capture_group(Some("foo".to_string()));
         object.create_capture_group(None);
 
         assert_str_eq!(
             object.get_debug_text(),
             "\
-> 0
-- 1
-# {0}
-# {1}, foo
-# {2}"
+* node: 0 (in)
+* node: 1
+# capture: {0}
+# capture: {1}, name: foo
+# capture: {2}"
         );
 
         assert_eq!(object.get_capture_group_index_by_name("foo"), Some(1));
@@ -421,11 +420,11 @@ mod tests {
         assert_str_eq!(
             route.get_debug_text(),
             "\
-> 0
-  -> 1, Char 'a'
-- 1
-- 2
-- 3"
+* node: 0 (in)
+  - Char 'a' -> 1
+* node: 1
+* node: 2
+* node: 3"
         );
 
         assert_eq!(trans_idx0, 0);
@@ -445,13 +444,13 @@ mod tests {
         assert_str_eq!(
             route.get_debug_text(),
             "\
-> 0
-  -> 1, Char 'a'
-  -> 2, Char 'b'
-  -> 3, Char 'c'
-- 1
-- 2
-- 3"
+* node: 0 (in)
+  - Char 'a' -> 1
+  - Char 'b' -> 2
+  - Char 'c' -> 3
+* node: 1
+* node: 2
+* node: 3"
         );
 
         assert_eq!(trans_idx1, 1);
@@ -466,14 +465,14 @@ mod tests {
         assert_str_eq!(
             route.get_debug_text(),
             "\
-> 0
-  -> 1, Char 'a'
-  -> 2, Char 'b'
-  -> 3, Char 'c'
-- 1
-  -> 2, Char 'x'
-- 2
-- 3"
+* node: 0 (in)
+  - Char 'a' -> 1
+  - Char 'b' -> 2
+  - Char 'c' -> 3
+* node: 1
+  - Char 'x' -> 2
+* node: 2
+* node: 3"
         );
 
         assert_eq!(trans_idx3, 0);

@@ -323,7 +323,7 @@ impl Lexer<'_> {
                         }
                         Some(_) => {
                             return Err(AnreError::MessageWithRange(
-                                "Invalid group syntax.".to_owned(),
+                                "Invalid group syntax.".to_string(),
                                 Range::new(
                                     &self.pop_position_from_stack(),
                                     self.peek_position(2).unwrap(),
@@ -332,7 +332,7 @@ impl Lexer<'_> {
                         }
                         None => {
                             return Err(AnreError::UnexpectedEndOfDocument(
-                                "Incomplete group.".to_owned(),
+                                "Incomplete group.".to_string(),
                             ));
                         }
                     }
@@ -525,7 +525,7 @@ impl Lexer<'_> {
                 }
                 None => {
                     return Err(AnreError::UnexpectedEndOfDocument(
-                        "Incomplete character set.".to_owned(),
+                        "Incomplete character set.".to_string(),
                     ));
                 }
             }
@@ -643,7 +643,7 @@ impl Lexer<'_> {
                             Token::Char(c)
                         } else {
                             return Err(AnreError::MessageWithPosition(
-                                "Missing opening brace for Unicode escape sequence.".to_owned(),
+                                "Missing opening brace for Unicode escape sequence.".to_string(),
                                 self.last_position,
                             ));
                         }
@@ -675,7 +675,7 @@ impl Lexer<'_> {
                     // invalid back reference group number 0
                     '0' => {
                         return Err(AnreError::MessageWithRange(
-                            "Cannot back-reference group 0.".to_owned(),
+                            "Cannot back-reference group 0.".to_string(),
                             Range::new(
                                 &self.pop_position_from_stack(),
                                 self.peek_position(0).unwrap(),
@@ -691,7 +691,7 @@ impl Lexer<'_> {
                             Token::BackReferenceName(s)
                         } else {
                             return Err(AnreError::MessageWithRange(
-                                "Missing opening angle bracket for group name.".to_owned(),
+                                "Missing opening angle bracket for group name.".to_string(),
                                 Range::new(
                                     &self.pop_position_from_stack(),
                                     self.peek_position(0).unwrap(),
@@ -713,7 +713,7 @@ impl Lexer<'_> {
             None => {
                 // `\` | EOF
                 return Err(AnreError::UnexpectedEndOfDocument(
-                    "Incomplete escape sequence.".to_owned(),
+                    "Incomplete escape sequence.".to_string(),
                 ));
             }
         };
@@ -762,7 +762,7 @@ impl Lexer<'_> {
                             Token::Char(c)
                         } else {
                             return Err(AnreError::MessageWithRange(
-                                "Missing opening brace for Unicode escape sequence.".to_owned(),
+                                "Missing opening brace for Unicode escape sequence.".to_string(),
                                 Range::new(&self.pop_position_from_stack(), &self.last_position),
                             ));
                         }
@@ -800,7 +800,7 @@ impl Lexer<'_> {
                     }
                     'b' | 'B' => {
                         return Err(AnreError::MessageWithRange(
-                            "Word boundary assertions are not supported in a character set.".to_owned(),
+                            "Word boundary assertions are not supported in a character set.".to_string(),
                             Range::new(
                                 &self.pop_position_from_stack(),
                                 self.peek_position(0).unwrap(),
@@ -809,7 +809,7 @@ impl Lexer<'_> {
                     }
                     '0'..='9' | 'k' => {
                         return Err(AnreError::MessageWithRange(
-                            "Backreferences are not supported in a character set.".to_owned(),
+                            "Backreferences are not supported in a character set.".to_string(),
                             Range::new(
                                 &self.pop_position_from_stack(),
                                 self.peek_position(0).unwrap(),
@@ -830,7 +830,7 @@ impl Lexer<'_> {
             None => {
                 // `\` | EOF
                 return Err(AnreError::UnexpectedEndOfDocument(
-                    "Incomplete escape sequence.".to_owned(),
+                    "Incomplete escape sequence.".to_string(),
                 ));
             }
         };
@@ -874,7 +874,7 @@ impl Lexer<'_> {
                 None => {
                     // EOF
                     return Err(AnreError::UnexpectedEndOfDocument(
-                        "Incomplete unicode escape sequence.".to_owned(),
+                        "Incomplete unicode escape sequence.".to_string(),
                     ));
                 }
             }
@@ -886,7 +886,7 @@ impl Lexer<'_> {
 
         if codepoint_buffer.len() > 6 {
             return Err(AnreError::MessageWithRange(
-                "Unicode code point exceeds six digits.".to_owned(),
+                "Unicode code point exceeds six digits.".to_string(),
                 Range::new(&self.position_stack.pop().unwrap(), &self.last_position),
             ));
         }
@@ -897,7 +897,7 @@ impl Lexer<'_> {
 
         if codepoint_buffer.is_empty() {
             return Err(AnreError::MessageWithRange(
-                "Unicode escape sequence has an empty code point.".to_owned(),
+                "Unicode escape sequence has an empty code point.".to_string(),
                 codepoint_range,
             ));
         }
@@ -913,7 +913,7 @@ impl Lexer<'_> {
             Ok(c)
         } else {
             Err(AnreError::MessageWithRange(
-                "Invalid Unicode code point.".to_owned(),
+                "Invalid Unicode code point.".to_string(),
                 codepoint_range,
             ))
         }
@@ -988,7 +988,7 @@ impl Lexer<'_> {
                 },
                 None => {
                     return Err(AnreError::UnexpectedEndOfDocument(
-                        "Incomplete capture group name.".to_owned(),
+                        "Incomplete capture group name.".to_string(),
                     ));
                 }
             }
@@ -998,7 +998,7 @@ impl Lexer<'_> {
 
         if name_buffer.is_empty() {
             return Err(AnreError::MessageWithRange(
-                "Expected a capture group name.".to_owned(),
+                "Expected a capture group name.".to_string(),
                 Range::new(&self.pop_position_from_stack(), &self.last_position),
             ));
         }
@@ -1035,7 +1035,7 @@ impl Lexer<'_> {
 
         if num_buffer.is_empty() {
             return Err(AnreError::MessageWithPosition(
-                "Expected a number.".to_owned(),
+                "Expected a number.".to_string(),
                 self.pop_position_from_stack(),
             ));
         }
@@ -1797,7 +1797,7 @@ mod tests {
                 TokenWithRange::new(Token::GroupEnd, Range::from_detail(7, 0, 7, 1)),
                 // named group
                 TokenWithRange::new(
-                    Token::NamedCaptureGroupStart("c".to_owned()),
+                    Token::NamedCaptureGroupStart("c".to_string()),
                     Range::from_detail(8, 0, 8, 5)
                 ),
                 TokenWithRange::new(Token::Char('d'), Range::from_detail(13, 0, 13, 1)),
@@ -1858,7 +1858,7 @@ mod tests {
                 ),
                 // back reference - name
                 TokenWithRange::new(
-                    Token::BackReferenceName("e".to_owned()),
+                    Token::BackReferenceName("e".to_string()),
                     Range::from_detail(2, 0, 2, 5)
                 ),
             ]

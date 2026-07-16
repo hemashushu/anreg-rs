@@ -221,7 +221,7 @@ impl Parser<'_> {
 
         if expressions.is_empty() {
             return Err(AnreError::MessageWithRange(
-                "Encountered an empty expression.".to_owned(),
+                "Encountered an empty expression.".to_string(),
                 self.last_range,
             ));
         }
@@ -580,7 +580,7 @@ impl Parser<'_> {
             }
             _ => {
                 return Err(AnreError::MessageWithRange(
-                    "Expected a literal.".to_owned(),
+                    "Expected a literal.".to_string(),
                     self.last_range,
                 ));
             }
@@ -631,7 +631,7 @@ impl Parser<'_> {
                 }
                 _ => {
                     return Err(AnreError::MessageWithRange(
-                        "Unsupported character set element.".to_owned(),
+                        "Unsupported character set element.".to_string(),
                         *self.peek_range(0).unwrap(),
                     ));
                 }
@@ -701,7 +701,7 @@ mod tests {
                 Program {
                     expression: Expression::Group(vec![
                         Expression::Literal(Literal::AnyChar),
-                        Expression::Literal(Literal::String("foo".to_owned())),
+                        Expression::Literal(Literal::String("foo".to_string())),
                     ])
                 }
             );

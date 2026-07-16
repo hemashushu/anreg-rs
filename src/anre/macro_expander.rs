@@ -56,7 +56,7 @@ fn extract_definitions(
                     // found ')'
                     if parenthesis_depth == 0 {
                         return Err(AnreError::MessageWithRange(
-                            "Unexpected ')' without matching '('.".to_owned(),
+                            "Unexpected ')' without matching '('.".to_string(),
                             tokens[idx].range,
                         ));
                     } else if parenthesis_depth == 1 {
@@ -90,7 +90,7 @@ fn extract_definitions(
             definitions.push(definition);
         } else {
             return Err(AnreError::UnexpectedEndOfDocument(
-                "Incomplete definition statement.".to_owned(),
+                "Incomplete definition statement.".to_string(),
             ));
         }
     }
@@ -185,11 +185,11 @@ impl<'a> DefinitionExtractor<'a> {
         match self.next_token() {
             Some(Token::Identifier(id)) => Ok(id),
             Some(_) => Err(AnreError::MessageWithPosition(
-                "Expected an identifier.".to_owned(),
+                "Expected an identifier.".to_string(),
                 self.last_range.start,
             )),
             None => Err(AnreError::UnexpectedEndOfDocument(
-                "Expected an identifier.".to_owned(),
+                "Expected an identifier.".to_string(),
             )),
         }
     }
@@ -302,10 +302,10 @@ mod tests {
             vec![
                 Token::Hash,
                 Token::ParenthesisOpen,
-                Token::Identifier("char_word".to_owned()),
+                Token::Identifier("char_word".to_string()),
                 Token::ParenthesisClose,
-                Token::Keyword("as".to_owned()),
-                Token::Identifier("🔑".to_owned()),
+                Token::Keyword("as".to_string()),
+                Token::Identifier("🔑".to_string()),
             ]
         );
     }

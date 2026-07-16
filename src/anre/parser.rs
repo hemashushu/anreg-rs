@@ -89,11 +89,11 @@ impl<'a> Parser<'a> {
         match self.next_token() {
             Some(Token::Identifier(id)) => Ok(id),
             Some(_) => Err(AnreError::MessageWithPosition(
-                "Expected an identifier.".to_owned(),
+                "Expected an identifier.".to_string(),
                 self.last_range.start,
             )),
             None => Err(AnreError::UnexpectedEndOfDocument(
-                "Expected an identifier.".to_owned(),
+                "Expected an identifier.".to_string(),
             )),
         }
     }
@@ -102,11 +102,11 @@ impl<'a> Parser<'a> {
         match self.next_token() {
             Some(Token::Number(i)) => Ok(i),
             Some(_) => Err(AnreError::MessageWithPosition(
-                "Expected a number.".to_owned(),
+                "Expected a number.".to_string(),
                 self.last_range.start,
             )),
             None => Err(AnreError::UnexpectedEndOfDocument(
-                "Expected a number.".to_owned(),
+                "Expected a number.".to_string(),
             )),
         }
     }
@@ -236,7 +236,7 @@ impl Parser<'_> {
         // ```
 
         let expression = self.parse_index_capture()?;
-        if self.peek_token_and_equals(0, &Token::Keyword("as".to_owned())) {
+        if self.peek_token_and_equals(0, &Token::Keyword("as".to_string())) {
             self.next_token(); // consume "as"
 
             let name = self.consume_identifier()?;
@@ -529,7 +529,7 @@ impl Parser<'_> {
             }
             None => {
                 return Err(AnreError::UnexpectedEndOfDocument(
-                    "Expected an expression.".to_owned(),
+                    "Expected an expression.".to_string(),
                 ));
             }
         };
@@ -689,7 +689,7 @@ impl Parser<'_> {
             }
             _ => {
                 return Err(AnreError::MessageWithRange(
-                    "Expected a literal.".to_owned(),
+                    "Expected a literal.".to_string(),
                     self.last_range,
                 ));
             }
@@ -743,7 +743,7 @@ impl Parser<'_> {
                         } else {
                             let range = Range::merge(&end_range, &self.last_range);
                             return Err(AnreError::MessageWithRange(
-                                "Expected a character literal.".to_owned(),
+                                "Expected a character literal.".to_string(),
                                 range,
                             ));
                         }
@@ -762,7 +762,7 @@ impl Parser<'_> {
                 _ => {
                     let range = Range::merge(&start_range, &self.last_range);
                     return Err(AnreError::MessageWithRange(
-                        "Unsupported character set element.".to_owned(),
+                        "Unsupported character set element.".to_string(),
                         range,
                     ));
                 }
@@ -867,7 +867,7 @@ mod tests {
                 expression: Expression::Group(vec![
                     Expression::Literal(Literal::AnyChar),
                     Expression::Literal(Literal::Char('a')),
-                    Expression::Literal(Literal::String("foo".to_owned())),
+                    Expression::Literal(Literal::String("foo".to_string())),
                 ])
             }
         );

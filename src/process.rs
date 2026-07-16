@@ -5,8 +5,8 @@
 // For more details, see the LICENSE, LICENSE.additional, and CONTRIBUTING files.
 
 use crate::{
-    object::{MAIN_ROUTE_INDEX, Map},
     context::{Context, MatchRange, Routine},
+    object::{MAIN_ROUTE_INDEX, Map},
     transition::{CharSetItem, RepetitionType, Transition},
     utf8_codepoint_reader::{next_codepoint, previous_codepoint},
 };
@@ -455,7 +455,7 @@ fn is_word_char(c: u32) -> bool {
 pub enum ExecuteResult {
     Success(
         usize, // Number of bytes to move forward
-        usize, // Updated repetition count
+        usize, // The latest repetition count
     ),
     Failure, // Indicates that the transition failed
 }

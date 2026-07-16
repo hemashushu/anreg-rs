@@ -304,7 +304,7 @@ impl<'a> Compiler<'a> {
 
                 if args.len() < 2 {
                     return Err(AnreError::SyntaxIncorrect(
-                        "Missing argument for look-ahead assertion.".to_owned(),
+                        "Missing argument for look-ahead assertion.".to_string(),
                     ));
                 }
 
@@ -325,7 +325,7 @@ impl<'a> Compiler<'a> {
 
                 if args.len() < 2 {
                     return Err(AnreError::SyntaxIncorrect(
-                        "Missing argument for look-behind assertion.".to_owned(),
+                        "Missing argument for look-behind assertion.".to_string(),
                     ));
                 }
                 let FunctionArgument::Expression(previous_expression) = &args[1] else {
@@ -424,7 +424,7 @@ impl<'a> Compiler<'a> {
 
                 if from > to {
                     return Err(AnreError::SyntaxIncorrect(
-                        "Repetition range values must be in ascending order.".to_owned(),
+                        "Repetition range values must be in ascending order.".to_string(),
                     ));
                 }
 
@@ -1118,7 +1118,7 @@ fn append_charset(charset: &CharSet, items: &mut Vec<CharSetItem>) -> Result<(),
             CharSetElement::CharSet(custom_charset) => {
                 if custom_charset.negative {
                     return Err(AnreError::SyntaxIncorrect(
-                        "Negative custom charset cannot be nested in another charset.".to_owned(),
+                        "Negative custom charset cannot be nested in another charset.".to_string(),
                     ));
                 }
                 append_charset(custom_charset, items)?;
@@ -1181,14 +1181,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1200,22 +1200,22 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 0, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 0
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -1229,26 +1229,26 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Char 'd'
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 0, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Char 'd' -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 0
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -1260,34 +1260,34 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Char 'd'
-- 7
-  -> 8, Jump
-- 8
-  -> 9, Char 'e'
-- 9
-  -> 10, Jump
-- 10
-  -> 11, Char 'f'
-- 11
-  -> 13, Capture end {0}
-> 12
-  -> 0, Capture start {0}
-< 13
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Char 'd' -> 7
+* node: 7
+  - Jump -> 8
+* node: 8
+  - Char 'e' -> 9
+* node: 9
+  - Jump -> 10
+* node: 10
+  - Char 'f' -> 11
+* node: 11
+  - Capture end {0} -> 13
+* node: 12 (in)
+  - Capture start {0} -> 0
+* node: 13 (out)
+# capture: {0}"
             );
         }
     }
@@ -1300,14 +1300,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, String \"文✨🦛\"
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - String \"文✨🦛\" -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
     }
@@ -1320,18 +1320,18 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Any char
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 0, Capture start {0}
-< 5
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Any char -> 3
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 0
+* node: 5 (out)
+# capture: {0}"
             );
         }
     }
@@ -1345,26 +1345,26 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Charset ['A'..'Z', 'a'..'z', '0'..'9', '_']
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Charset [' ', '\\t', '\\r', '\\n']
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Charset ['0'..'9']
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 0, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Charset ['A'..'Z', 'a'..'z', '0'..'9', '_'] -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Charset [' ', '\\t', '\\r', '\\n'] -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Charset ['0'..'9'] -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 0
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -1378,26 +1378,26 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Charset !['A'..'Z', 'a'..'z', '0'..'9', '_']
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Charset ![' ', '\\t', '\\r', '\\n']
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Charset !['0'..'9']
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 0, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Charset !['A'..'Z', 'a'..'z', '0'..'9', '_'] -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Charset ![' ', '\\t', '\\r', '\\n'] -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Charset !['0'..'9'] -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 0
+* node: 9 (out)
+# capture: {0}"
             );
         }
     }
@@ -1411,14 +1411,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['a', '0'..'7']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset ['a', '0'..'7'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1429,14 +1429,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset !['a', '0'..'7']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset !['a', '0'..'7'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1447,14 +1447,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['A'..'Z', 'a'..'z', '0'..'9', '_', ' ', '\\t', '\\r', '\\n']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset ['A'..'Z', 'a'..'z', '0'..'9', '_', ' ', '\\t', '\\r', '\\n'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1466,14 +1466,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['a', 'x'..'z']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset ['a', 'x'..'z'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1485,14 +1485,14 @@ mod tests {
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['+', '-', '0'..'9', 'a'..'f']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset ['+', '-', '0'..'9', 'a'..'f'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1510,14 +1510,14 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['+', '-', '0'..'9', 'a'..'f']
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Charset ['+', '-', '0'..'9', 'a'..'f'] -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -1546,23 +1546,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 5, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 5, Jump
-- 4
-  -> 0, Jump
-  -> 2, Jump
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 4, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 5
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 5
+* node: 4
+  - Jump -> 0
+  - Jump -> 2
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 4
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -1575,32 +1575,32 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 9, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 7, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 7, Jump
-- 6
-  -> 2, Jump
-  -> 4, Jump
-- 7
-  -> 9, Jump
-- 8
-  -> 0, Jump
-  -> 6, Jump
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 8, Capture start {0}
-< 11
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 9
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 7
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 2
+  - Jump -> 4
+* node: 7
+  - Jump -> 9
+* node: 8
+  - Jump -> 0
+  - Jump -> 6
+* node: 9
+  - Capture end {0} -> 11
+* node: 10 (in)
+  - Capture start {0} -> 8
+* node: 11 (out)
+# capture: {0}"
             );
         }
 
@@ -1611,32 +1611,32 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 5, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 5, Jump
-- 4
-  -> 0, Jump
-  -> 2, Jump
-- 5
-  -> 9, Jump
-- 6
-  -> 7, Char 'c'
-- 7
-  -> 9, Jump
-- 8
-  -> 4, Jump
-  -> 6, Jump
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 8, Capture start {0}
-< 11
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 5
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 5
+* node: 4
+  - Jump -> 0
+  - Jump -> 2
+* node: 5
+  - Jump -> 9
+* node: 6
+  - Char 'c' -> 7
+* node: 7
+  - Jump -> 9
+* node: 8
+  - Jump -> 4
+  - Jump -> 6
+* node: 9
+  - Capture end {0} -> 11
+* node: 10 (in)
+  - Capture start {0} -> 8
+* node: 11 (out)
+# capture: {0}"
             );
         }
 
@@ -1648,27 +1648,27 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 7, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 7, Jump
-- 6
-  -> 0, Jump
-  -> 4, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 7
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 0
+  - Jump -> 4
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 6
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -1681,31 +1681,31 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 6, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 7, Jump
-- 4
-  -> 5, Char 'c'
-- 5
-  -> 7, Jump
-- 6
-  -> 2, Jump
-  -> 4, Jump
-- 7
-  -> 8, Jump
-- 8
-  -> 9, Char 'd'
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 0, Capture start {0}
-< 11
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 6
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Jump -> 7
+* node: 4
+  - Char 'c' -> 5
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 2
+  - Jump -> 4
+* node: 7
+  - Jump -> 8
+* node: 8
+  - Char 'd' -> 9
+* node: 9
+  - Capture end {0} -> 11
+* node: 10 (in)
+  - Capture start {0} -> 0
+* node: 11 (out)
+# capture: {0}"
             );
         }
     }
@@ -1718,22 +1718,22 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Line boundary assertion is_start()
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Word boundary assertion is_bound()
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'a'
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 0, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Line boundary assertion is_start() -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Word boundary assertion is_bound() -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'a' -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 0
+* node: 7 (out)
+# capture: {0}"
             );
 
             // Check `is_fixed_cursor_begin_position`.
@@ -1746,22 +1746,22 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Word boundary assertion is_not_bound()
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Char 'a'
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Line boundary assertion is_end()
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 0, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Word boundary assertion is_not_bound() -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Char 'a' -> 3
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Line boundary assertion is_end() -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 0
+* node: 7 (out)
+# capture: {0}"
             );
 
             // Check the `is_fixed_cursor_begin_position` property.
@@ -1777,28 +1777,28 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {1}
-- 2
-  -> 0, Capture start {1}
-- 3
-  -> 6, Jump
-- 4
-  -> 5, Char 'b'
-- 5
-  -> 7, Capture end {2}
-- 6
-  -> 4, Capture start {2}
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 2, Capture start {0}
-< 9
-# {0}
-# {1}, foo
-# {2}, bar"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {1} -> 3
+* node: 2
+  - Capture start {1} -> 0
+* node: 3
+  - Jump -> 6
+* node: 4
+  - Char 'b' -> 5
+* node: 5
+  - Capture end {2} -> 7
+* node: 6
+  - Capture start {2} -> 4
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 2
+* node: 9 (out)
+# capture: {0}
+# capture: {1}, name: foo
+# capture: {2}, name: bar"
             );
         }
 
@@ -1811,41 +1811,41 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 2, Jump
-- 2
-  -> 3, Charset ['0'..'9']
-- 3
-  -> 5, Capture end {1}
-- 4
-  -> 0, Capture start {1}
-- 5
-  -> 12, Jump
-- 6
-  -> 7, Char 'x'
-- 7
-  -> 11, Jump
-- 8
-  -> 9, Char 'y'
-- 9
-  -> 11, Jump
-- 10
-  -> 6, Jump
-  -> 8, Jump
-- 11
-  -> 13, Capture end {2}
-- 12
-  -> 10, Capture start {2}
-- 13
-  -> 15, Capture end {0}
-> 14
-  -> 4, Capture start {0}
-< 15
-# {0}
-# {1}, foo
-# {2}, bar"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 2
+* node: 2
+  - Charset ['0'..'9'] -> 3
+* node: 3
+  - Capture end {1} -> 5
+* node: 4
+  - Capture start {1} -> 0
+* node: 5
+  - Jump -> 12
+* node: 6
+  - Char 'x' -> 7
+* node: 7
+  - Jump -> 11
+* node: 8
+  - Char 'y' -> 9
+* node: 9
+  - Jump -> 11
+* node: 10
+  - Jump -> 6
+  - Jump -> 8
+* node: 11
+  - Capture end {2} -> 13
+* node: 12
+  - Capture start {2} -> 10
+* node: 13
+  - Capture end {0} -> 15
+* node: 14 (in)
+  - Capture start {0} -> 4
+* node: 15 (out)
+# capture: {0}
+# capture: {1}, name: foo
+# capture: {2}, name: bar"
             );
         }
 
@@ -1856,24 +1856,24 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {2}
-- 2
-  -> 0, Capture start {2}
-- 3
-  -> 5, Capture end {1}
-- 4
-  -> 2, Capture start {1}
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 4, Capture start {0}
-< 7
-# {0}
-# {1}, bar
-# {2}, foo"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {2} -> 3
+* node: 2
+  - Capture start {2} -> 0
+* node: 3
+  - Capture end {1} -> 5
+* node: 4
+  - Capture start {1} -> 2
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 4
+* node: 7 (out)
+# capture: {0}
+# capture: {1}, name: bar
+# capture: {2}, name: foo"
             );
         }
     }
@@ -1889,32 +1889,32 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {1}
-- 2
-  -> 0, Capture start {1}
-- 3
-  -> 8, Jump
-- 4
-  -> 5, Char 'b'
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Charset ['0'..'9']
-- 7
-  -> 9, Capture end {2}
-- 8
-  -> 4, Capture start {2}
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 2, Capture start {0}
-< 11
-# {0}
-# {1}
-# {2}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {1} -> 3
+* node: 2
+  - Capture start {1} -> 0
+* node: 3
+  - Jump -> 8
+* node: 4
+  - Char 'b' -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Charset ['0'..'9'] -> 7
+* node: 7
+  - Capture end {2} -> 9
+* node: 8
+  - Capture start {2} -> 4
+* node: 9
+  - Capture end {0} -> 11
+* node: 10 (in)
+  - Capture start {0} -> 2
+* node: 11 (out)
+# capture: {0}
+# capture: {1}
+# capture: {2}"
             );
         }
 
@@ -1927,32 +1927,32 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 6, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 5, Capture end {1}
-- 4
-  -> 2, Capture start {1}
-- 5
-  -> 7, Jump
-- 6
-  -> 4, Jump
-  -> 7, Jump
-- 7
-  -> 8, Jump
-- 8
-  -> 9, Char 'c'
-- 9
-  -> 11, Capture end {0}
-> 10
-  -> 0, Capture start {0}
-< 11
-# {0}
-# {1}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 6
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Capture end {1} -> 5
+* node: 4
+  - Capture start {1} -> 2
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 4
+  - Jump -> 7
+* node: 7
+  - Jump -> 8
+* node: 8
+  - Char 'c' -> 9
+* node: 9
+  - Capture end {0} -> 11
+* node: 10 (in)
+  - Capture start {0} -> 0
+* node: 11 (out)
+# capture: {0}
+# capture: {1}"
             )
         }
 
@@ -1965,36 +1965,36 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 6, Jump
-- 2
-  -> 3, Char 'b'
-- 3
-  -> 5, Capture end {1}
-- 4
-  -> 2, Capture start {1}
-- 5
-  -> 8, Counter inc
-- 6
-  -> 7, Counter reset
-- 7
-  -> 4, Counter save
-- 8
-  -> 7, Repetition back [3..5]
-  -> 9, Repetition forward [3..5]
-- 9
-  -> 10, Jump
-- 10
-  -> 11, Char 'c'
-- 11
-  -> 13, Capture end {0}
-> 12
-  -> 0, Capture start {0}
-< 13
-# {0}
-# {1}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 6
+* node: 2
+  - Char 'b' -> 3
+* node: 3
+  - Capture end {1} -> 5
+* node: 4
+  - Capture start {1} -> 2
+* node: 5
+  - Counter inc -> 8
+* node: 6
+  - Counter reset -> 7
+* node: 7
+  - Counter save -> 4
+* node: 8
+  - Repetition back [3..5] -> 7
+  - Repetition forward [3..5] -> 9
+* node: 9
+  - Jump -> 10
+* node: 10
+  - Char 'c' -> 11
+* node: 11
+  - Capture end {0} -> 13
+* node: 12 (in)
+  - Capture start {0} -> 0
+* node: 13 (out)
+# capture: {0}
+# capture: {1}"
             )
         }
     }
@@ -2010,27 +2010,27 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {1}
-- 2
-  -> 0, Capture start {1}
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'b'
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Back reference {1}
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 2, Capture start {0}
-< 9
-# {0}
-# {1}, foo"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {1} -> 3
+* node: 2
+  - Capture start {1} -> 0
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'b' -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Back reference {1} -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 2
+* node: 9 (out)
+# capture: {0}
+# capture: {1}, name: foo"
             );
         }
 
@@ -2043,27 +2043,27 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Charset ['A'..'Z', 'a'..'z', '0'..'9', '_']
-- 1
-  -> 3, Capture end {1}
-- 2
-  -> 0, Capture start {1}
-- 3
-  -> 4, Jump
-- 4
-  -> 5, Char 'x'
-- 5
-  -> 6, Jump
-- 6
-  -> 7, Back reference {1}
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 2, Capture start {0}
-< 9
-# {0}
-# {1}"
+* node: 0
+  - Charset ['A'..'Z', 'a'..'z', '0'..'9', '_'] -> 1
+* node: 1
+  - Capture end {1} -> 3
+* node: 2
+  - Capture start {1} -> 0
+* node: 3
+  - Jump -> 4
+* node: 4
+  - Char 'x' -> 5
+* node: 5
+  - Jump -> 6
+* node: 6
+  - Back reference {1} -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 2
+* node: 9 (out)
+# capture: {0}
+# capture: {1}"
             );
         }
     }
@@ -2080,19 +2080,19 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 0, Jump
-  -> 3, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Jump -> 0
+  - Jump -> 3
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+# capture: {0}"
             );
         }
 
@@ -2106,19 +2106,19 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 3, Jump
-  -> 0, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Jump -> 3
+  - Jump -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+# capture: {0}"
             );
         }
     }
@@ -2135,23 +2135,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [2]
-  -> 3, Repetition back [2]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [2] -> 5
+  - Repetition back [2] -> 3
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2165,14 +2165,14 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
 
@@ -2186,14 +2186,14 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Jump
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Jump -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
     }
@@ -2210,23 +2210,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 3, Repetition back [3..]
-  -> 5, Repetition forward [3..]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition back [3..] -> 3
+  - Repetition forward [3..] -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2240,23 +2240,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [3..]
-  -> 3, Repetition back [3..]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [3..] -> 5
+  - Repetition back [3..] -> 3
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2305,23 +2305,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 3, Repetition back [3..5]
-  -> 5, Repetition forward [3..5]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition back [3..5] -> 3
+  - Repetition forward [3..5] -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2335,23 +2335,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [3..5]
-  -> 3, Repetition back [3..5]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [3..5] -> 5
+  - Repetition back [3..5] -> 3
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2381,28 +2381,28 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 3, Repetition back [1..5]
-  -> 5, Repetition forward [1..5]
-- 5
-  -> 7, Jump
-- 6
-  -> 2, Jump
-  -> 7, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition back [1..5] -> 3
+  - Repetition forward [1..5] -> 5
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 2
+  - Jump -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 6
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -2416,28 +2416,28 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [1..5]
-  -> 3, Repetition back [1..5]
-- 5
-  -> 7, Jump
-- 6
-  -> 7, Jump
-  -> 2, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [1..5] -> 5
+  - Repetition back [1..5] -> 3
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 7
+  - Jump -> 2
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 6
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -2465,14 +2465,14 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Jump
-- 1
-  -> 3, Capture end {0}
-> 2
-  -> 0, Capture start {0}
-< 3
-# {0}"
+* node: 0
+  - Jump -> 1
+* node: 1
+  - Capture end {0} -> 3
+* node: 2 (in)
+  - Capture start {0} -> 0
+* node: 3 (out)
+# capture: {0}"
             );
         }
     }
@@ -2489,19 +2489,19 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 0, Jump
-  -> 3, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Jump -> 0
+  - Jump -> 3
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+# capture: {0}"
             );
         }
 
@@ -2515,19 +2515,19 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 3, Jump
-  -> 0, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Jump -> 3
+  - Jump -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+# capture: {0}"
             );
         }
     }
@@ -2544,23 +2544,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 3, Repetition back [1..]
-  -> 5, Repetition forward [1..]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition back [1..] -> 3
+  - Repetition forward [1..] -> 5
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
 
@@ -2574,23 +2574,23 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [1..]
-  -> 3, Repetition back [1..]
-- 5
-  -> 7, Capture end {0}
-> 6
-  -> 2, Capture start {0}
-< 7
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [1..] -> 5
+  - Repetition back [1..] -> 3
+* node: 5
+  - Capture end {0} -> 7
+* node: 6 (in)
+  - Capture start {0} -> 2
+* node: 7 (out)
+# capture: {0}"
             );
         }
     }
@@ -2607,28 +2607,28 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 3, Repetition back [1..]
-  -> 5, Repetition forward [1..]
-- 5
-  -> 7, Jump
-- 6
-  -> 2, Jump
-  -> 7, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition back [1..] -> 3
+  - Repetition forward [1..] -> 5
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 2
+  - Jump -> 7
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 6
+* node: 9 (out)
+# capture: {0}"
             );
         }
 
@@ -2642,28 +2642,28 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 4, Counter inc
-- 2
-  -> 3, Counter reset
-- 3
-  -> 0, Counter save
-- 4
-  -> 5, Repetition forward [1..]
-  -> 3, Repetition back [1..]
-- 5
-  -> 7, Jump
-- 6
-  -> 7, Jump
-  -> 2, Jump
-- 7
-  -> 9, Capture end {0}
-> 8
-  -> 6, Capture start {0}
-< 9
-# {0}"
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Counter inc -> 4
+* node: 2
+  - Counter reset -> 3
+* node: 3
+  - Counter save -> 0
+* node: 4
+  - Repetition forward [1..] -> 5
+  - Repetition back [1..] -> 3
+* node: 5
+  - Jump -> 7
+* node: 6
+  - Jump -> 7
+  - Jump -> 2
+* node: 7
+  - Capture end {0} -> 9
+* node: 8 (in)
+  - Capture start {0} -> 6
+* node: 9 (out)
+# capture: {0}"
             );
         }
     }
@@ -2680,23 +2680,25 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-= $0
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Look ahead $1
-- 2
-  -> 0, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-= $1
-> 0
-  -> 1, String \"xyz\"
-< 1
-# {0}"
+= route: $0
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Look ahead $1 -> 3
+* node: 2
+  - Jump -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+
+= route: $1
+* node: 0 (in)
+  - String \"xyz\" -> 1
+* node: 1 (out)
+
+# capture: {0}"
             );
         }
 
@@ -2710,23 +2712,25 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-= $0
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Look ahead negative $1
-- 2
-  -> 0, Jump
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-= $1
-> 0
-  -> 1, String \"xyz\"
-< 1
-# {0}"
+= route: $0
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Look ahead negative $1 -> 3
+* node: 2
+  - Jump -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+
+= route: $1
+* node: 0 (in)
+  - String \"xyz\" -> 1
+* node: 1 (out)
+
+# capture: {0}"
             );
         }
 
@@ -2751,23 +2755,25 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-= $0
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 0, Look behind $1, match length 3
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-= $1
-> 0
-  -> 1, String \"xyz\"
-< 1
-# {0}"
+= route: $0
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Look behind $1, match length 3 -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+
+= route: $1
+* node: 0 (in)
+  - String \"xyz\" -> 1
+* node: 1 (out)
+
+# capture: {0}"
             );
         }
 
@@ -2781,23 +2787,25 @@ define letter (['a'..'f'])
             assert_str_eq!(
                 s,
                 "\
-= $0
-- 0
-  -> 1, Char 'a'
-- 1
-  -> 3, Jump
-- 2
-  -> 0, Look behind negative $1, match length 3
-- 3
-  -> 5, Capture end {0}
-> 4
-  -> 2, Capture start {0}
-< 5
-= $1
-> 0
-  -> 1, String \"xyz\"
-< 1
-# {0}"
+= route: $0
+* node: 0
+  - Char 'a' -> 1
+* node: 1
+  - Jump -> 3
+* node: 2
+  - Look behind negative $1, match length 3 -> 0
+* node: 3
+  - Capture end {0} -> 5
+* node: 4 (in)
+  - Capture start {0} -> 2
+* node: 5 (out)
+
+= route: $1
+* node: 0 (in)
+  - String \"xyz\" -> 1
+* node: 1 (out)
+
+# capture: {0}"
             );
         }
 
