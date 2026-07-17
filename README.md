@@ -1187,11 +1187,11 @@ The repetition component is used to match an inner component a certain number of
   |                      repetition back transition                         |
   |              /--------------------------------------------\             |
   |              |                                            |             |
-  |              |     | counter             | counter        |             |
-  |              |     | save                | load & inc     |             |
-  |              |     | transition          | transition     |             |
-  |  in          |     |                     |                |             |
-  |  node        v     v     /-----------\   v  right node    |       out   |
+  |              |                           | counter        |             |
+  |              |    | jump                 | increment      |             |
+  |              |    | transition           | transition     |             |
+  |  in          |    |                      |                |             |
+  |  node        v    v      /-----------\   v  right node    |       out   |
 =====o==-------==o==-------==o in    out o==------==o|o==-----/       node  |
   |          ^   left        \-----------/           |o==--------------==o=====
   |  counter |   node       inner component                   ^             |
@@ -1205,8 +1205,7 @@ The repetition component is used to match an inner component a certain number of
 - `in node` and `out node`: they are the interface of the component.
 - `left node` and `right node`: they are used internally to connect the inner component and the repetition transitions.
 - `counter reset transition`: each repetition component has a counter, which is used to count how many times the inner component is matched. The counter reset transition is used to reset the counter to 0 before the loop starts.
-- `counter save transition`: this transition is used to save the current counter value to a "counter stack" before the inner component is executed, this transition is needed because the inner component may contain other repetition components, which may modify the outer counter value, so we need to save the current counter value before executing the inner component, and restore it after the inner component is executed.
-- `counter load and increment transition`: this transition is used to load the counter value from the "counter stack", and increment the counter by 1, then to prepare for the checking transitions:
+- `counter increment transition`: this transition is used to increment the counter by 1, then to prepare for the checking transitions:
   - `repetition back transition`: this transition is used to check the current counter value, if it is less than the maximum repetition times, it will jump back to the `left node` to execute the inner component again, otherwise, it will return false and the `repetition forward transition` will be tried.
   - `repetition forward transition`: this transition is used to check the current counter value also, if it is greater than or equal to the minimum repetition times, it will jump to the `out node`, otherwise, the repetition component returns false.
 
@@ -1217,11 +1216,11 @@ There is another kind of repetition component called lazy repetition, such as `a
 ```diagram
   /-------------------------------------------------------------------------\
   |                                                                         |
-  |                    | counter             | counter                      |
-  |                    | save                | load & inc                   |
-  |                    | transition          | transition                   |
-  |  in        left    |                     |                        out   |
-  |  node      node    v     /-----------\   v  right node            node  |
+  |                                          | counter                      |
+  |                   | jump                 | increment                    |
+  |                   | transition           | transition                   |
+  |  in        left   |                      |                        out   |
+  |  node      node   v      /-----------\   v  right node            node  |
 =====o==-------==o==-------==o in    out o==------==o|o==--------------==o=====
   |          ^   ^           \-----------/           |o==--\  ^             |
   |  counter |   |          inner component                |  | repetition  |
@@ -1283,7 +1282,7 @@ The compiler wraps the sequence of components into a "group component", where al
 ```diagram
   /-------------------------------------------------------------\
   |                    jump                  other components   |
-  |                  | transition          | and transitions    |
+  |                  | transition          | and jumps          |
   |                  |                     |                    |
   |  /-----------\   |     /-----------\   |     /-----------\  |
 =====o in    out o==-----==o in    out o==.....==o in    out o=====

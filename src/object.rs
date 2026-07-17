@@ -44,6 +44,8 @@ pub struct Map {
     // This vector is used to store the names of capture groups, where
     // the index of the name corresponds to the capture group index.
     pub capture_groups: Vec<Option<String>>,
+
+    pub repetition_counter_count: usize,
 }
 
 // A `Route` represents a series of nodes.
@@ -93,6 +95,7 @@ impl Map {
         Map {
             routes: vec![],
             capture_groups: vec![],
+            repetition_counter_count: 0,
         }
     }
 
@@ -114,6 +117,12 @@ impl Map {
     pub fn create_capture_group(&mut self, name: Option<String>) -> usize {
         let idx = self.capture_groups.len();
         self.capture_groups.push(name);
+        idx
+    }
+
+    pub fn create_repetition_counter(&mut self) -> usize {
+        let idx = self.repetition_counter_count;
+        self.repetition_counter_count += 1;
         idx
     }
 

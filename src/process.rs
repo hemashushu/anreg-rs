@@ -99,12 +99,12 @@ fn execute_transitions(context: &mut Context, map: &Map, cursor: usize) -> bool 
         let node = &route.nodes[frame.current_node_index];
         let transition_item = &node.path[frame.transition_index];
 
-        let cursor = frame.cursor;
+        let last_cursor = frame.cursor;
         let last_repetition_count = frame.repetition_count;
         let transition = &transition_item.transition;
         let target_node_index = transition_item.target_node_index;
 
-        let execute_result = transition.execute(context, map, cursor, last_repetition_count);
+        let execute_result = transition.execute(context, map, last_cursor, last_repetition_count);
 
         match execute_result {
             ExecuteResult::Success(move_forward_in_bytes, current_repetition_count) => {
@@ -117,7 +117,7 @@ fn execute_transitions(context: &mut Context, map: &Map, cursor: usize) -> bool 
                 context.push_transitions_of_node(
                     map,
                     target_node_index,
-                    cursor + move_forward_in_bytes,
+                    last_cursor + move_forward_in_bytes,
                     current_repetition_count,
                 );
             }
@@ -132,19 +132,24 @@ fn execute_transitions(context: &mut Context, map: &Map, cursor: usize) -> bool 
 }
 
 impl Transition {
+    /// Executes the transition and returns the result.
+    ///
+    /// Note that the `cursor` and `repetition_count` should be passed as parameters
+    /// instead of being stored in the context because they are specific to the transition being executed
+    /// and may change during backtracking.
     pub fn execute(
         &self,
         context: &mut Context,
         map: &Map,
 
         // the current position.
+        //
         // position is a cursor in the source text.
         cursor: usize,
 
         // the current repetition number.
         //
         // it is used by:
-        // - `Transition::CounterSave`,
         // - `Transition::RepetitionForward`
         // - `Transition::RepetitionBack`
         repetition_count: usize,
@@ -307,14 +312,16 @@ impl Transition {
                 context.matched_slots[transition.capture_group_index].end = cursor;
                 ExecuteResult::Success(0, 0)
             }
-            Transition::CounterReset(_) => ExecuteResult::Success(0, 0),
-            Transition::CounterSave(_) => {
-                context.counter_stack.push(repetition_count);
+            Transition::CounterReset(transition) => {
+                let counter_index = transition.counter_index;
+                context.counter_slots[counter_index] = 0;
                 ExecuteResult::Success(0, 0)
             }
-            Transition::CounterLoadAndInc(_) => {
-                let last_count = context.counter_stack.pop().unwrap();
-                ExecuteResult::Success(0, last_count + 1)
+            Transition::CounterIncrement(transition) => {
+                let counter_index = transition.counter_index;
+                let new_count = context.counter_slots[counter_index] + 1;
+                context.counter_slots[counter_index] = new_count;
+                ExecuteResult::Success(0, new_count)
             }
             Transition::RepetitionForward(transition) => {
                 let can_forward = match transition.repetition_type {

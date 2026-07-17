@@ -14,12 +14,12 @@ use crate::{
     object::{Component, Map, Route},
     transition::{
         AnyCharTransition, BackReferenceTransition, CaptureEndTransition, CaptureStartTransition,
-        CharSetItem, CharSetTransition, CharTransition, CounterLoadAndIncTransition,
-        CounterResetTransition, CounterSaveTransition, JumpTransition,
-        LineBoundaryAssertionTransition, LookAheadAssertionTransition,
-        LookBehindAssertionTransition, RepetitionBackTransition, RepetitionForwardTransition,
-        RepetitionType, StringTransition, Transition, WordBoundaryAssertionTransition, add_char,
-        add_preset_digit, add_preset_space, add_preset_word, add_range,
+        CharSetItem, CharSetTransition, CharTransition, CounterIncrementTransition,
+        CounterResetTransition, JumpTransition, LineBoundaryAssertionTransition,
+        LookAheadAssertionTransition, LookBehindAssertionTransition, RepetitionBackTransition,
+        RepetitionForwardTransition, RepetitionType, StringTransition, Transition,
+        WordBoundaryAssertionTransition, add_char, add_preset_digit, add_preset_space,
+        add_preset_word, add_range,
     },
 };
 
@@ -154,7 +154,7 @@ impl<'a> Compiler<'a> {
         // ```diagram
         //   /-------------------------------------------------------------\
         //   |                    jump                  other components   |
-        //   |                  | transition          | and transitions    |
+        //   |                  | transition          | and jumps          |
         //   |                  |                     |                    |
         //   |  /-----------\   |     /-----------\   |     /-----------\  |
         // =====o in    out o==-----==o in    out o==.....==o in    out o=====
@@ -836,11 +836,11 @@ impl<'a> Compiler<'a> {
         //   |                      repetition back transition                         |
         //   |              /--------------------------------------------\             |
         //   |              |                                            |             |
-        //   |              |     | counter             | counter        |             |
-        //   |              |     | save                | load & inc     |             |
-        //   |              |     | transition          | transition     |             |
-        //   |  in          |     |                     |                |             |
-        //   |  node        v     v     /-----------\   v  right node    |       out   |
+        //   |              |                           | counter        |             |
+        //   |              |    | jump                 | increment      |             |
+        //   |              |    | transition           | transition     |             |
+        //   |  in          |    |                      |                |             |
+        //   |  node        v    v      /-----------\   v  right node    |       out   |
         // =====o==-------==o==-------==o in    out o==------==o|o==-----/       node  |
         //   |          ^   left        \-----------/           |o==--------------==o=====
         //   |  counter |   node       inner component                   ^             |
@@ -856,11 +856,11 @@ impl<'a> Compiler<'a> {
         // ```diagram
         //   /-------------------------------------------------------------------------\
         //   |                                                                         |
-        //   |                    | counter             | counter                      |
-        //   |                    | save                | load & inc                   |
-        //   |                    | transition          | transition                   |
-        //   |  in        left    |                     |                        out   |
-        //   |  node      node    v     /-----------\   v  right node            node  |
+        //   |                                          | counter                      |
+        //   |                   | jump                 | increment                    |
+        //   |                   | transition           | transition                   |
+        //   |  in        left   |                      |                        out   |
+        //   |  node      node   v      /-----------\   v  right node            node  |
         // =====o==-------==o==-------==o in    out o==------==o|o==--------------==o=====
         //   |          ^   ^           \-----------/           |o==--\  ^             |
         //   |  counter |   |          inner component                |  | repetition  |
@@ -871,22 +871,29 @@ impl<'a> Compiler<'a> {
         //   \--------------------- lazy repetition component -------------------------/
         // ```
 
+        let repetition_counter_index = self.map.create_repetition_counter();
         let component = self.emit_expression(expression)?;
 
         let route = self.get_current_route_ref_mut();
         let in_node_index = route.create_node();
         let left_node_index = route.create_node();
 
+        let counter_reset_transition = CounterResetTransition::new(repetition_counter_index);
+        let counter_increment_transition =
+            CounterIncrementTransition::new(repetition_counter_index);
+        let repetition_forward_transition = RepetitionForwardTransition::new(repetition_type);
+        let repetition_back_transition = RepetitionBackTransition::new(repetition_type);
+
         route.create_path(
             in_node_index,
             left_node_index,
-            Transition::CounterReset(CounterResetTransition),
+            Transition::CounterReset(counter_reset_transition),
         );
 
         route.create_path(
             left_node_index,
             component.in_node_index,
-            Transition::CounterSave(CounterSaveTransition),
+            Transition::Jump(JumpTransition),
         );
 
         let right_node_index = route.create_node();
@@ -894,7 +901,7 @@ impl<'a> Compiler<'a> {
         route.create_path(
             component.out_node_index,
             right_node_index,
-            Transition::CounterLoadAndInc(CounterLoadAndIncTransition),
+            Transition::CounterIncrement(counter_increment_transition),
         );
 
         let out_node_index = route.create_node();
@@ -903,27 +910,25 @@ impl<'a> Compiler<'a> {
             route.create_path(
                 right_node_index,
                 out_node_index,
-                Transition::RepetitionForward(RepetitionForwardTransition::new(
-                    repetition_type.clone(),
-                )),
+                Transition::RepetitionForward(repetition_forward_transition),
             );
 
             route.create_path(
                 right_node_index,
                 left_node_index,
-                Transition::RepetitionBack(RepetitionBackTransition::new(repetition_type)),
+                Transition::RepetitionBack(repetition_back_transition),
             );
         } else {
             route.create_path(
                 right_node_index,
                 left_node_index,
-                Transition::RepetitionBack(RepetitionBackTransition::new(repetition_type.clone())),
+                Transition::RepetitionBack(repetition_back_transition),
             );
 
             route.create_path(
                 right_node_index,
                 out_node_index,
-                Transition::RepetitionForward(RepetitionForwardTransition::new(repetition_type)),
+                Transition::RepetitionForward(repetition_forward_transition),
             );
         }
 
@@ -1976,11 +1981,11 @@ define letter (['a'..'f'])
 * node: 4
   - Capture start {1} -> 2
 * node: 5
-  - Counter inc -> 8
+  - Counter increment -> 8
 * node: 6
   - Counter reset -> 7
 * node: 7
-  - Counter save -> 4
+  - Jump -> 4
 * node: 8
   - Repetition back [3..5] -> 7
   - Repetition forward [3..5] -> 9
@@ -2138,11 +2143,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [2] -> 5
   - Repetition back [2] -> 3
@@ -2213,11 +2218,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition back [3..] -> 3
   - Repetition forward [3..] -> 5
@@ -2243,11 +2248,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [3..] -> 5
   - Repetition back [3..] -> 3
@@ -2308,11 +2313,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition back [3..5] -> 3
   - Repetition forward [3..5] -> 5
@@ -2338,11 +2343,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [3..5] -> 5
   - Repetition back [3..5] -> 3
@@ -2384,11 +2389,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition back [1..5] -> 3
   - Repetition forward [1..5] -> 5
@@ -2419,11 +2424,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [1..5] -> 5
   - Repetition back [1..5] -> 3
@@ -2547,11 +2552,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition back [1..] -> 3
   - Repetition forward [1..] -> 5
@@ -2577,11 +2582,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [1..] -> 5
   - Repetition back [1..] -> 3
@@ -2610,11 +2615,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition back [1..] -> 3
   - Repetition forward [1..] -> 5
@@ -2645,11 +2650,11 @@ define letter (['a'..'f'])
 * node: 0
   - Char 'a' -> 1
 * node: 1
-  - Counter inc -> 4
+  - Counter increment -> 4
 * node: 2
   - Counter reset -> 3
 * node: 3
-  - Counter save -> 0
+  - Jump -> 0
 * node: 4
   - Repetition forward [1..] -> 5
   - Repetition back [1..] -> 3

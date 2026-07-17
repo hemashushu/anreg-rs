@@ -33,7 +33,8 @@ impl Regex {
     pub fn find<'a, 'b>(&'a self, text: &'b str) -> Option<Match<'a, 'b>> {
         let bytes = text.as_bytes();
         let number_of_capture_groups = self.map.capture_groups.len();
-        let mut context = Context::from_bytes(bytes, number_of_capture_groups);
+        let number_of_counters = self.map.repetition_counter_count;
+        let mut context = Context::from_bytes(bytes, number_of_capture_groups, number_of_counters);
 
         if !start_process(&mut context, &self.map, 0) {
             return None;
@@ -53,7 +54,8 @@ impl Regex {
     pub fn find_iter<'a, 'b>(&'a self, text: &'b str) -> Matches<'a, 'b> {
         let bytes = text.as_bytes();
         let number_of_capture_groups = self.map.capture_groups.len();
-        let context = Context::from_bytes(bytes, number_of_capture_groups);
+        let number_of_counters = self.map.repetition_counter_count;
+        let context = Context::from_bytes(bytes, number_of_capture_groups, number_of_counters);
 
         Matches::new(&self.map, context)
     }
@@ -61,7 +63,8 @@ impl Regex {
     pub fn captures<'a, 'b>(&'a self, text: &'b str) -> Option<Captures<'a, 'b>> {
         let bytes = text.as_bytes();
         let number_of_capture_groups = self.map.capture_groups.len();
-        let mut context = Context::from_bytes(bytes, number_of_capture_groups);
+        let number_of_counters = self.map.repetition_counter_count;
+        let mut context = Context::from_bytes(bytes, number_of_capture_groups, number_of_counters);
 
         if !start_process(&mut context, &self.map, 0) {
             return None;
@@ -87,7 +90,8 @@ impl Regex {
     pub fn captures_iter<'a, 'b>(&'a self, text: &'b str) -> CaptureMatches<'a, 'b> {
         let bytes = text.as_bytes();
         let number_of_capture_groups = self.map.capture_groups.len();
-        let context = Context::from_bytes(bytes, number_of_capture_groups);
+        let number_of_counters = self.map.repetition_counter_count;
+        let context = Context::from_bytes(bytes, number_of_capture_groups, number_of_counters);
 
         CaptureMatches::new(&self.map, context)
     }
@@ -95,7 +99,8 @@ impl Regex {
     pub fn is_match(&self, text: &str) -> bool {
         let bytes = text.as_bytes();
         let number_of_capture_groups = self.map.capture_groups.len();
-        let mut context = Context::from_bytes(bytes, number_of_capture_groups);
+        let number_of_counters = self.map.repetition_counter_count;
+        let mut context = Context::from_bytes(bytes, number_of_capture_groups, number_of_counters);
         start_process(&mut context, &self.map, 0)
     }
 }
@@ -338,14 +343,14 @@ mod tests {
     }
 
     fn new_captures<'a, 'b>(
-        mes: &'a [(
+        matches: &'a [(
             /*start:*/ usize,
             /*end:*/ usize,
             /*name:*/ Option<&'a str>,
             /*value:*/ &'b str,
         )],
     ) -> Captures<'a, 'b> {
-        let matches: Vec<Match> = mes
+        let matches: Vec<Match> = matches
             .iter()
             .map(|item| Match::new(item.0, item.1, item.2, item.3))
             .collect();
@@ -1334,6 +1339,57 @@ mod tests {
             assert_eq!(matches.next(), Some(new_match(10, 10, "")));
             assert_eq!(matches.next(), Some(new_match(11, 11, "")));
             assert_eq!(matches.next(), None);
+        }
+
+        // parallel repetition
+        for re in build(
+            r#"index('a'{1..2}){2..3}"#, // ANRE
+            r#"(a{1,2}){2,3}"#,          // traditional
+        ) {
+            assert!(!re.is_match("a"));
+            assert!(re.is_match("aa"));
+            assert!(re.is_match("aaa"));
+            assert!(re.is_match("aaaa"));
+            assert!(re.is_match("aaaaa"));
+            assert!(re.is_match("aaaaaa"));
+            assert!(re.is_match("aaaaaaa"));
+
+            let mut matches = re.find_iter("aaaaa");
+            assert_eq!(matches.next(), Some(new_match(0, 5, "aaaaa")));
+            assert_eq!(matches.next(), None);
+
+            let mut captures = re.captures_iter("aaaaaaa");
+            assert_eq!(
+                captures.next(),
+                Some(new_captures(&[(0, 6, None, "aaaaaa"), (4, 6, None, "aa")]))
+            );
+        }
+
+        // nested repetition
+        for re in build(
+            r#"index(('a'{1..2}, 'b')){2..3}"#, // ANRE
+            r#"(a{1,2}b){2,3}"#,                // traditional
+        ) {
+            assert!(!re.is_match("ab"));
+            assert!(!re.is_match("aab"));
+            assert!(!re.is_match("abb"));
+
+            assert!(re.is_match("abab"));
+            assert!(re.is_match("abababab"));
+            assert!(re.is_match("aabaab"));
+            assert!(re.is_match("aabaabaab"));
+            assert!(re.is_match("aabab"));
+            assert!(re.is_match("aabababab"));
+
+            let mut matches = re.find_iter("aabab");
+            assert_eq!(matches.next(), Some(new_match(0, 5, "aabab")));
+            assert_eq!(matches.next(), None);
+
+            let mut captures = re.captures_iter("aabababab");
+            assert_eq!(
+                captures.next(),
+                Some(new_captures(&[(0, 7, None, "aababab"), (5, 7, None, "ab")]))
+            );
         }
     }
 

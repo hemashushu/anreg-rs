@@ -33,8 +33,7 @@ pub enum Transition {
     // Since the repetition may be nested, we need to use a counter and
     // a pair of save/load transitions to track the number of repetitions.
     CounterReset(CounterResetTransition), // Reset the counter to zero
-    CounterSave(CounterSaveTransition),   // Save the current counter value
-    CounterLoadAndInc(CounterLoadAndIncTransition), // Load the counter value and increment it
+    CounterIncrement(CounterIncrementTransition), // Increment the counter by one
 
     // Repetition transitions
     RepetitionForward(RepetitionForwardTransition),
@@ -126,15 +125,15 @@ pub struct CaptureEndTransition {
 
 /// Represents a transition that resets a counter.
 #[derive(Debug)]
-pub struct CounterResetTransition;
-
-/// Represents a transition that saves the current counter value.
-#[derive(Debug)]
-pub struct CounterSaveTransition;
+pub struct CounterResetTransition {
+    pub counter_index: usize, // Index of the counter to reset
+}
 
 /// Represents a transition that increments the counter.
 #[derive(Debug)]
-pub struct CounterLoadAndIncTransition;
+pub struct CounterIncrementTransition {
+    pub counter_index: usize, // Index of the counter to increment
+}
 
 /// Represents a transition that checks the counter and moves forward if the condition is satisfied.
 ///
@@ -325,7 +324,19 @@ impl CaptureEndTransition {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+impl CounterResetTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterResetTransition { counter_index }
+    }
+}
+
+impl CounterIncrementTransition {
+    pub fn new(counter_index: usize) -> Self {
+        CounterIncrementTransition { counter_index }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum RepetitionType {
     Repeat(usize),
     RepeatFrom(usize),
@@ -377,8 +388,7 @@ impl Display for Transition {
             Transition::CaptureStart(t) => write!(f, "{}", t),
             Transition::CaptureEnd(t) => write!(f, "{}", t),
             Transition::CounterReset(t) => write!(f, "{}", t),
-            Transition::CounterSave(t) => write!(f, "{}", t),
-            Transition::CounterLoadAndInc(t) => write!(f, "{}", t),
+            Transition::CounterIncrement(t) => write!(f, "{}", t),
             Transition::RepetitionForward(t) => write!(f, "{}", t),
             Transition::RepetitionBack(t) => write!(f, "{}", t),
             Transition::LookAheadAssertion(t) => write!(f, "{}", t),
@@ -502,15 +512,9 @@ impl Display for CounterResetTransition {
     }
 }
 
-impl Display for CounterSaveTransition {
+impl Display for CounterIncrementTransition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Counter save")
-    }
-}
-
-impl Display for CounterLoadAndIncTransition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Counter inc")
+        f.write_str("Counter increment")
     }
 }
 
